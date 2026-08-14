@@ -19,6 +19,7 @@ def download_pdf(url: str, output_path: Path) -> Path:
 
     response.raise_for_status()
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(response.content)
 
     return output_path

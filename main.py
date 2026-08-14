@@ -3,7 +3,6 @@ from pathlib import Path
 from ai_assessment.config import SOURCE_DOCUMENTS
 from ai_assessment.downloader import download_pdf
 from ai_assessment.pdf_extractor import extract_pdf
-from ai_assessment.layout_parser import inspect_pdf
 
 
 RAW_DATA_DIR = Path("data/raw")
@@ -19,7 +18,6 @@ def main():
         print(f"FILE: {json_path}")
         print("#" * 100)
 
-        inspect_pdf(json_path)
     # extract
 
     # for pdf_path in RAW_DATA_DIR.glob("*.pdf"):
