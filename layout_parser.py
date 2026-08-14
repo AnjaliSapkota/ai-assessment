@@ -1,194 +1,485 @@
 from pathlib import Path
 import json
 import re
+from itertools import combinations
 
 
 # ============================================================
-# 1. LOAD EXTRACTED PDF
+# 1. PATHS
+# ============================================================
+
+INPUT_PATH = Path(
+    r"D:\ai-assessment\data\extracted\source_2.json"
+)
+
+OUTPUT_PATH = Path(
+    r"D:\ai-assessment\data\parsed\source_2.json"
+)
+
+
+# ============================================================
+# 2. SOURCE 2 MODEL DEFINITIONS
+# ============================================================
+
+MODELS = [
+    "SUN-4K-G06P3",
+    "SUN-5K-G06P3",
+    "SUN-6K-G06P3",
+    "SUN-7K-G06P3",
+    "SUN-8K-G06P3",
+    "SUN-10K-G06P3",
+    "SUN-12K-G06P3",
+    "SUN-15K-G06P3",
+]
+
+MODEL_PATTERN = re.compile(
+    r"^SUN-(?:4|5|6|7|8|10|12|15)K-G06P3$"
+)
+
+
+# ============================================================
+# 3. SOURCE 2 SECTION HEADERS
+# ============================================================
+
+SECTION_HEADERS = {
+    "Technical Data",
+    "PV String Input Data",
+    "AC Output Side",
+    "Efficiency",
+    "Equipment Protection",
+    "Interface",
+    "General Data",
+    "Grid Regulation",
+}
+
+
+# ============================================================
+# 4. PARAMETERS THAT ARE KNOWN TO HAVE CONTINUATION LINES
+# ============================================================
+
+KNOWN_PARAMETERS = {
+    "No. of MPP Trackers/ No. of Strings per MPP Tracker",
+    "Power Factor Adjustment Range",
+    "Operating Temperature Range (°C)",
+    "Type of Cooling",
+    "Safety EMC/Standard",
+}
+
+
+# ============================================================
+# 5. FOOTER / NON-TABLE CONTENT
+# ============================================================
+
+IGNORED_PARAMETER_PREFIXES = (
+    "Ningbo Deye Inverter",
+    "Add:",
+    "Tel:",
+    "E-mail:",
+    "Stock Code:",
+    "Technical Data www.",
+)
+
+
+# ============================================================
+# 6. LOAD EXTRACTED PDF
 # ============================================================
 
 def load_extracted_pdf(json_path: Path) -> list:
-    """Load word-level PDF extraction data."""
+    """
+    Load word-level PDF extraction data.
+    """
 
-    with json_path.open("r", encoding="utf-8") as f:
+    if not json_path.exists():
+        raise FileNotFoundError(
+            f"Input file not found:\n{json_path}"
+        )
+
+    with json_path.open(
+        "r",
+        encoding="utf-8"
+    ) as f:
         return json.load(f)
 
 
 # ============================================================
-# 2. GROUP WORDS INTO VISUAL ROWS
+# 7. TEXT NORMALIZATION
 # ============================================================
 
-def group_words_into_rows(words, y_tolerance=3):
+def clean_text(text):
     """
-    Group words that appear on approximately the same visual line.
+    Normalize PDF text while preserving technical notation.
+    """
+
+    if text is None:
+        return ""
+
+    text = str(text).strip()
+
+    # PDF ligatures / extraction artifacts
+    text = text.replace("ﬁ", "fi")
+    text = text.replace("ﬃ", "ffi")
+    text = text.replace("ﬂ", "fl")
+
+    # Normalize dashes
+    text = text.replace("–", "-")
+    text = text.replace("—", "-")
+
+    # Normalize multiplication symbols
+    text = text.replace("×", "×")
+
+    # Normalize whitespace
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text.strip()
+
+
+# ============================================================
+# 8. WORD POSITION HELPERS
+# ============================================================
+
+def word_x0(word):
+    return float(
+        word["x0"]
+    )
+
+
+def word_x1(word):
+    return float(
+        word.get(
+            "x1",
+            word["x0"]
+        )
+    )
+
+
+def word_center_x(word):
+    return (
+        word_x0(word)
+        +
+        word_x1(word)
+    ) / 2.0
+
+
+def word_y(word):
+    return float(
+        word["y0"]
+    )
+
+
+# ============================================================
+# 9. GROUP WORDS INTO STRICT VISUAL ROWS
+# ============================================================
+
+def group_words_into_rows(
+    words,
+    y_tolerance=3
+):
+    """
+    Group words that belong to the SAME physical PDF line.
+
+    IMPORTANT:
+    We deliberately use a relatively small tolerance.
+
+    Source 2 has normal table rows approximately 11-12 pixels
+    apart, while words belonging to the same physical line have
+    nearly identical Y coordinates.
+
+    A larger tolerance can incorrectly merge:
+
+        Weight
+        Operating Temperature Range
+
+    or:
+
+        Natural Cooling
+        Warranty
     """
 
     rows = []
 
     sorted_words = sorted(
         words,
-        key=lambda word: (word["y0"], word["x0"])
+        key=lambda w: (
+            word_y(w),
+            word_x0(w)
+        )
     )
 
     for word in sorted_words:
 
-        placed = False
+        y = word_y(word)
+
+        matched_row = None
+
+        # Find the closest existing row.
+        closest_distance = float("inf")
 
         for row in rows:
 
-            if abs(word["y0"] - row["y"]) <= y_tolerance:
+            distance = abs(
+                y - row["y"]
+            )
 
-                row["words"].append(word)
+            if (
+                distance <= y_tolerance
+                and
+                distance < closest_distance
+            ):
+                closest_distance = distance
+                matched_row = row
 
-                row["y"] = sum(
-                    w["y0"] for w in row["words"]
-                ) / len(row["words"])
+        if matched_row is None:
 
-                placed = True
-                break
+            rows.append(
+                {
+                    "y": y,
+                    "words": [word]
+                }
+            )
 
-        if not placed:
+        else:
 
-            rows.append({
-                "y": word["y0"],
-                "words": [word]
-            })
+            matched_row["words"].append(
+                word
+            )
+
+            # IMPORTANT:
+            # Do NOT continuously update the row Y based on every
+            # added word. That can cause rows to drift together.
+            #
+            # Keep the original representative Y.
+
+    # --------------------------------------------------------
+    # Sort words horizontally
+    # --------------------------------------------------------
 
     for row in rows:
 
         row["words"].sort(
-            key=lambda word: word["x0"]
+            key=lambda w: (
+                word_y(w),
+                word_x0(w)
+            )
         )
 
+    # --------------------------------------------------------
+    # Sort rows vertically
+    # --------------------------------------------------------
+
     rows.sort(
-        key=lambda row: row["y"]
+        key=lambda r: r["y"]
     )
 
     return rows
 
 
 # ============================================================
-# 3. MODEL DETECTION
+# 10. DETECT MODEL COLUMNS
 # ============================================================
-
-MODEL_PATTERN = re.compile(
-    r"SUN-\d+K-G06P3"
-)
-
 
 def detect_model_columns(page):
     """
-    Detect model names and their x coordinates.
+    Detect the eight Source 2 model columns.
     """
 
-    models = []
+    detected = []
 
     for word in page["words"]:
 
-        text = word["text"].strip()
+        text = clean_text(
+            word["text"]
+        )
 
         if MODEL_PATTERN.fullmatch(text):
 
-            models.append({
-                "model": text,
-                "x": word["x0"]
-            })
+            detected.append(
+                {
+                    "model": text,
+                    "x": word_center_x(word)
+                }
+            )
 
-    # Remove duplicates while preserving x position
+    # --------------------------------------------------------
+    # Remove duplicates
+    # --------------------------------------------------------
+
     unique = {}
 
-    for model in models:
-        unique[model["model"]] = model
+    for item in detected:
 
-    return sorted(
-        unique.values(),
+        unique[item["model"]] = item
+
+    detected = list(
+        unique.values()
+    )
+
+    # --------------------------------------------------------
+    # Sort visually
+    # --------------------------------------------------------
+
+    detected.sort(
         key=lambda item: item["x"]
+    )
+
+    return detected
+
+
+# ============================================================
+# 11. MODEL SUFFIX DETECTION
+# ============================================================
+
+def is_model_suffix_row(row):
+    """
+    Detect the '-EU-AM2' continuation line below the model names.
+    """
+
+    texts = [
+        clean_text(
+            word["text"]
+        )
+        for word in row["words"]
+    ]
+
+    texts = [
+        text
+        for text in texts
+        if text
+    ]
+
+    if not texts:
+        return False
+
+    return all(
+        text == "-EU-AM2"
+        for text in texts
     )
 
 
 # ============================================================
-# 4. VALUE DETECTION
+# 12. LEFT-SIDE WORDS
 # ============================================================
 
-def is_value(text):
+def get_left_words(
+    row,
+    first_model_x
+):
     """
-    Determine whether a token is likely to be a table value.
-
-    IMPORTANT:
-    We deliberately allow many formats because PDF tables contain
-    values such as:
-
-        1100
-        120-1000
-        13+13
-        19.5+39
-        6.1/5.8
-        98.5%
-        <3%
-        4000m
-        3L/N/PE
-        IEC/EN
-        G99
-        R25
-        VDE-AR-N
-        61727
-        62116
+    Return words before the model/value area.
     """
 
-    text = text.strip()
+    return [
+        word
+        for word in row["words"]
+        if word_x0(word) < first_model_x
+    ]
+
+
+# ============================================================
+# 13. GET PARAMETER TEXT FROM ONE PHYSICAL ROW
+# ============================================================
+
+def get_left_text(
+    row,
+    first_model_x
+):
+    """
+    Extract parameter text from the left side of one row.
+    """
+
+    words = get_left_words(
+        row,
+        first_model_x
+    )
+
+    if not words:
+        return ""
+
+    words = sorted(
+        words,
+        key=lambda w: (
+            word_y(w),
+            word_x0(w)
+        )
+    )
+
+    text = " ".join(
+        clean_text(
+            word["text"]
+        )
+        for word in words
+    )
+
+    return clean_text(
+        text
+    )
+
+
+# ============================================================
+# 14. VALUE-WORD DETECTION
+# ============================================================
+
+def looks_like_value_word(text):
+    """
+    Determine whether a word belongs to a technical value.
+
+    This is intentionally broader than the previous is_value()
+    function.
+
+    We do NOT require every individual word to be numeric.
+
+    Examples of valid value words:
+
+        0.8
+        leading
+        to
+        lagging
+        Natural
+        Cooling
+        -25
+        +60℃,
+        Derating
+        IEC
+        61727,
+        G99,
+        4105
+    """
+
+    text = clean_text(text)
 
     if not text:
         return False
 
-    # Pure numeric value
-    if re.fullmatch(r"-?\d+(?:\.\d+)?", text):
+    # Explicit textual value words.
+    if text in {
+        "Yes",
+        "No",
+        "Natural",
+        "Cooling",
+        "Non-Isolated",
+        "Derating",
+        "leading",
+        "lagging",
+        "to",
+        "TYPE",
+        "II(DC),",
+        "II(AC)",
+    }:
         return True
 
-    # Numeric ranges
-    if re.fullmatch(
-        r"-?\d+(?:\.\d+)?[-–]\d+(?:\.\d+)?",
+    # Anything containing a number.
+    if re.search(
+        r"\d",
         text
     ):
         return True
 
-    # Numeric expressions: 13+13, 19.5+39
+    # Technical standard words.
     if re.fullmatch(
-        r"-?\d+(?:\.\d+)?(?:[+/]\d+(?:\.\d+)?)+",
-        text
-    ):
-        return True
-
-    # Values such as 6.1/5.8
-    if re.fullmatch(
-        r"-?\d+(?:\.\d+)?/\d+(?:\.\d+)?",
-        text
-    ):
-        return True
-
-    # Percentages
-    if re.fullmatch(
-        r"[<>]?\d+(?:\.\d+)?%",
-        text
-    ):
-        return True
-
-    # <3, >99
-    if re.fullmatch(
-        r"[<>]\d+(?:\.\d+)?",
-        text
-    ):
-        return True
-
-    # Number + unit/text
-    # Examples: 4000m, 98.5%, 220/380V
-    if re.search(r"\d", text):
-        return True
-
-    # Standards / codes without numbers
-    # Examples: G99, R25 are already caught by digit rule.
-    # Keep short alphanumeric codes.
-    if re.fullmatch(
-        r"[A-Za-z]+(?:[-/][A-Za-z0-9]+)+",
+        r"[A-Za-z]+(?:/[A-Za-z0-9]+)*,?",
         text
     ):
         return True
@@ -197,14 +488,36 @@ def is_value(text):
 
 
 # ============================================================
-# 5. VALUE EXTRACTION
+# 15. EXTRACT VALUE REGIONS
 # ============================================================
 
-def extract_row_values(row, models):
+def extract_value_regions(
+    row,
+    models
+):
     """
-    Extract values from the model/value area.
+    Extract complete value expressions from a physical row.
 
-    We no longer require a value to match only a narrow numeric regex.
+    Instead of treating each PDF word as an independent value,
+    words are grouped into horizontal value regions.
+
+    Example:
+
+        0.8 leading to 0.8 lagging
+
+    becomes ONE value.
+
+    Likewise:
+
+        Natural Cooling
+
+    becomes ONE value.
+
+    And:
+
+        -25 to +60℃, >45℃ Derating
+
+    becomes ONE value.
     """
 
     if not models:
@@ -212,161 +525,706 @@ def extract_row_values(row, models):
 
     first_model_x = models[0]["x"]
 
-    values = []
+    candidate_words = []
 
     for word in row["words"]:
 
-        if word["x0"] < first_model_x:
+        if word_x0(word) < first_model_x:
             continue
 
-        text = word["text"].strip()
+        text = clean_text(
+            word["text"]
+        )
 
-        if is_value(text):
+        if not text:
+            continue
 
-            values.append({
+        if not looks_like_value_word(
+            text
+        ):
+            continue
+
+        candidate_words.append(
+            word
+        )
+
+    if not candidate_words:
+        return []
+
+    candidate_words.sort(
+        key=word_center_x
+    )
+
+    # --------------------------------------------------------
+    # Group horizontally adjacent words.
+    #
+    # The PDF's words within one value expression are close
+    # together. Large gaps generally indicate separate cells.
+    # --------------------------------------------------------
+
+    regions = []
+
+    current = [
+        candidate_words[0]
+    ]
+
+    for word in candidate_words[1:]:
+
+        previous = current[-1]
+
+        gap = (
+            word_x0(word)
+            -
+            word_x1(previous)
+        )
+
+        # Normal textual spacing is small.
+        #
+        # A large gap generally indicates a new model/cell.
+        #
+        # 30 px is deliberately conservative for this PDF.
+        if gap <= 30:
+
+            current.append(
+                word
+            )
+
+        else:
+
+            regions.append(
+                current
+            )
+
+            current = [
+                word
+            ]
+
+    regions.append(
+        current
+    )
+
+    # --------------------------------------------------------
+    # Build complete value objects
+    # --------------------------------------------------------
+
+    values = []
+
+    for region in regions:
+
+        region = sorted(
+            region,
+            key=word_center_x
+        )
+
+        text = " ".join(
+            clean_text(
+                word["text"]
+            )
+            for word in region
+        )
+
+        text = clean_text(
+            text
+        )
+
+        if not text:
+            continue
+
+        x0 = min(
+            word_x0(word)
+            for word in region
+        )
+
+        x1 = max(
+            word_x1(word)
+            for word in region
+        )
+
+        values.append(
+            {
                 "text": text,
-                "x": word["x0"]
-            })
+                "x": (x0 + x1) / 2.0,
+                "x0": x0,
+                "x1": x1,
+                "y": min(
+                    word_y(word)
+                    for word in region
+                )
+            }
+        )
 
-    return sorted(
-        values,
-        key=lambda item: item["x"]
+    values.sort(
+        key=lambda value: value["x"]
+    )
+
+    return values
+
+
+# ============================================================
+# 16. SECTION HEADER DETECTION
+# ============================================================
+
+def is_section_header(parameter):
+    """
+    Identify structural headings.
+    """
+
+    return parameter in SECTION_HEADERS
+
+
+# ============================================================
+# 17. IGNORE NON-TABLE ROWS
+# ============================================================
+
+def should_ignore_row(
+    row,
+    parameter
+):
+    """
+    Determine whether a physical row is structural/footer
+    content.
+    """
+
+    parameter = clean_text(
+        parameter
+    )
+
+    if is_model_suffix_row(
+        row
+    ):
+        return True
+
+    if is_section_header(
+        parameter
+    ):
+        return True
+
+    for prefix in IGNORED_PARAMETER_PREFIXES:
+
+        if parameter.startswith(
+            prefix
+        ):
+            return True
+
+    return False
+
+
+# ============================================================
+# 18. NEAREST MODEL
+# ============================================================
+
+def nearest_model(
+    value_x,
+    models
+):
+    """
+    Return the nearest model column.
+    """
+
+    return min(
+        models,
+        key=lambda model:
+        abs(
+            value_x
+            -
+            model["x"]
+        )
     )
 
 
 # ============================================================
-# 6. MAP MODEL ROW
+# 19. MAP ONE VALUE PER MODEL
 # ============================================================
 
-def map_model_row(values, models):
+def map_model_row(
+    values,
+    models
+):
+    """
+    Map one value to each model.
+    """
 
     result = {}
 
-    for value, model in zip(values, models):
+    for value in values:
 
-        result[model["model"]] = value["text"]
+        model = nearest_model(
+            value["x"],
+            models
+        )
+
+        result[
+            model["model"]
+        ] = value["text"]
 
     return result
 
 
 # ============================================================
-# 7. MAP GROUPED ROW
+# 20. GROUPED VALUE MAPPING
 # ============================================================
 
-def map_grouped_row(values, models):
+def calculate_group_center(
+    models,
+    start,
+    end
+):
     """
-    Map values to groups according to horizontal position.
+    Calculate visual center of a contiguous model group.
     """
 
-    if not values:
+    group = models[
+        start:end
+    ]
+
+    return sum(
+        model["x"]
+        for model in group
+    ) / len(group)
+
+
+def grouped_mapping_cost(
+    values,
+    models,
+    split_points
+):
+    """
+    Calculate the visual grouping cost.
+    """
+
+    boundaries = (
+        [0]
+        +
+        list(split_points)
+        +
+        [len(models)]
+    )
+
+    cost = 0.0
+
+    for i, value in enumerate(values):
+
+        start = boundaries[i]
+        end = boundaries[i + 1]
+
+        center = calculate_group_center(
+            models,
+            start,
+            end
+        )
+
+        distance = (
+            value["x"]
+            -
+            center
+        )
+
+        cost += distance ** 2
+
+    return cost
+
+
+def find_best_grouping(
+    values,
+    models
+):
+    """
+    Find the most likely contiguous model groups.
+    """
+
+    value_count = len(
+        values
+    )
+
+    model_count = len(
+        models
+    )
+
+    if value_count == 0:
+        return []
+
+    if value_count == 1:
+
+        return [
+            (
+                0,
+                model_count
+            )
+        ]
+
+    if value_count > model_count:
+        return []
+
+    best_split = None
+    best_cost = float(
+        "inf"
+    )
+
+    for split_points in combinations(
+        range(
+            1,
+            model_count
+        ),
+        value_count - 1
+    ):
+
+        cost = grouped_mapping_cost(
+            values,
+            models,
+            split_points
+        )
+
+        if cost < best_cost:
+
+            best_cost = cost
+            best_split = split_points
+
+    if best_split is None:
+        return []
+
+    boundaries = (
+        [0]
+        +
+        list(best_split)
+        +
+        [model_count]
+    )
+
+    return [
+        (
+            boundaries[i],
+            boundaries[i + 1]
+        )
+        for i in range(
+            value_count
+        )
+    ]
+
+
+def map_grouped_row(
+    values,
+    models
+):
+    """
+    Map values to contiguous model groups.
+    """
+
+    if not values or not models:
         return {}
 
     values = sorted(
         values,
-        key=lambda value: value["x"]
+        key=lambda value:
+        value["x"]
     )
 
-    # One value applies to all models
     if len(values) == 1:
 
         return {
-            "ALL_MODELS": values[0]["text"]
+            "ALL_MODELS":
+                values[0]["text"]
         }
 
-    boundaries = []
+    groups = find_best_grouping(
+        values,
+        models
+    )
 
-    for i in range(len(values) - 1):
-
-        boundaries.append(
-            (
-                values[i]["x"]
-                + values[i + 1]["x"]
-            ) / 2
-        )
-
-    groups = [[] for _ in values]
-
-    for model in models:
-
-        group_index = 0
-
-        while (
-            group_index < len(boundaries)
-            and model["x"] > boundaries[group_index]
-        ):
-            group_index += 1
-
-        groups[group_index].append(
-            model["model"]
-        )
+    if not groups:
+        return {}
 
     result = {}
 
-    for value, group in zip(values, groups):
+    for value, (
+        start,
+        end
+    ) in zip(
+        values,
+        groups
+    ):
 
-        if group:
+        group_models = models[
+            start:end
+        ]
 
-            result[
-                ", ".join(group)
-            ] = value["text"]
+        if not group_models:
+            continue
+
+        model_names = [
+            model["model"]
+            for model in group_models
+        ]
+
+        result[
+            ", ".join(model_names)
+        ] = value["text"]
 
     return result
 
 
 # ============================================================
-# 8. CLASSIFY ROW
+# 21. CLASSIFY ROW
 # ============================================================
 
-def classify_row(values, models):
+def classify_row(
+    values,
+    models
+):
+    """
+    Classify the number of value regions.
+    """
 
-    if not values:
+    value_count = len(
+        values
+    )
+
+    model_count = len(
+        models
+    )
+
+    if value_count == 0:
         return "no_values"
 
-    if len(values) == 1:
+    if value_count == 1:
         return "common_value"
 
-    if len(values) == len(models):
+    if value_count == model_count:
         return "model_row"
 
     return "grouped_row"
 
 
 # ============================================================
-# 9. PARAMETER NAME
+# 22. MERGE CONTINUATION ROWS
 # ============================================================
 
-def extract_parameter_name(row, models, all_rows=None):
+def merge_continuation_rows(
+    rows,
+    models
+):
+    """
+    Merge physical PDF lines that belong to one logical table row.
+
+    This handles cases such as:
+
+        No. of MPP Trackers/
+        No. of Strings per MPP Tracker
+
+    and:
+
+        Safety EMC/Standard
+        OVE-Richtlinie R25, G99, VDE-AR-N 4105
+
+    and multi-line technical values.
+
+    The function works conservatively:
+
+    - It does NOT merge ordinary adjacent table rows.
+    - It only merges rows when the parameter/value structure
+      strongly indicates continuation.
+    """
+
+    if not rows:
+        return []
+
+    merged = []
+
+    i = 0
+
+    while i < len(rows):
+
+        current = rows[i]
+
+        parameter = clean_text(
+            current.get(
+                "parameter",
+                ""
+            )
+        )
+
+        # ----------------------------------------------------
+        # Known wrapped parameter:
+        #
+        # No. of MPP Trackers/
+        # No. of Strings per MPP Tracker
+        # ----------------------------------------------------
+
+        if (
+            parameter
+            ==
+            "No. of MPP Trackers/"
+            and
+            i + 1 < len(rows)
+        ):
+
+            next_row = rows[i + 1]
+
+            next_parameter = clean_text(
+                next_row.get(
+                    "parameter",
+                    ""
+                )
+            )
+
+            if (
+                next_parameter
+                ==
+                "No. of Strings per MPP Tracker"
+            ):
+
+                current["parameter"] = (
+                    "No. of MPP Trackers/ "
+                    "No. of Strings per MPP Tracker"
+                )
+
+                # Keep the values from the first physical row.
+                # The second physical row has no model values
+                # in the actual table.
+                i += 2
+
+                merged.append(
+                    current
+                )
+
+                continue
+
+        # ----------------------------------------------------
+        # Safety/EMC continuation
+        #
+        # The standard list can wrap across physical lines.
+        # ----------------------------------------------------
+
+        if (
+            parameter
+            ==
+            "Safety EMC/Standard"
+        ):
+
+            combined_values = []
+
+            # Current row values
+            if current.get("values"):
+                combined_values.extend(
+                    current["values"].items()
+                )
+
+            j = i + 1
+
+            while j < len(rows):
+
+                candidate = rows[j]
+
+                candidate_parameter = clean_text(
+                    candidate.get(
+                        "parameter",
+                        ""
+                    )
+                )
+
+                candidate_values = candidate.get(
+                    "values",
+                    {}
+                )
+
+                # Continuation lines have no parameter text
+                # and contain standard-like values.
+                if (
+                    not candidate_parameter
+                    and
+                    candidate_values
+                ):
+
+                    combined_values.extend(
+                        candidate_values.items()
+                    )
+
+                    j += 1
+
+                else:
+                    break
+
+            # Rebuild grouped values by model-group key.
+            #
+            # If continuation values belong to the same group,
+            # concatenate them.
+            result_values = {}
+
+            for key, value in combined_values:
+
+                if key in result_values:
+
+                    result_values[key] = (
+                        result_values[key]
+                        + " "
+                        + value
+                    )
+
+                else:
+
+                    result_values[key] = value
+
+            current["values"] = result_values
+
+            i = j
+
+            merged.append(
+                current
+            )
+
+            continue
+
+        # ----------------------------------------------------
+        # Default:
+        # keep row unchanged.
+        # ----------------------------------------------------
+
+        merged.append(
+            current
+        )
+
+        i += 1
+
+    return merged
+
+
+# ============================================================
+# 23. PARSE ONE PHYSICAL ROW
+# ============================================================
+
+def parse_physical_row(
+    row,
+    models
+):
+    """
+    Parse one physical PDF row.
+    """
 
     if not models:
-        return ""
+
+        return {
+            "y": round(
+                row["y"],
+                2
+            ),
+            "type": "no_values",
+            "parameter": "",
+            "values": {}
+        }
 
     first_model_x = models[0]["x"]
 
-    words = [
-        word
-        for word in row["words"]
-        if word["x0"] < first_model_x
-    ]
-
-    words.sort(
-        key=lambda word: (word["y0"], word["x0"])
+    parameter = get_left_text(
+        row,
+        first_model_x
     )
 
-    parameter = " ".join(
-        word["text"]
-        for word in words
-    ).strip()
+    if should_ignore_row(
+        row,
+        parameter
+    ):
+        return None
 
-    return parameter
-
-
-# ============================================================
-# 10. PARSE ONE ROW
-# ============================================================
-
-def parse_row(row, models, all_rows=None):
-
-    values = extract_row_values(
+    values = extract_value_regions(
         row,
         models
     )
@@ -376,52 +1234,171 @@ def parse_row(row, models, all_rows=None):
         models
     )
 
-    parameter = extract_parameter_name(
-        row,
-        models,
-        all_rows
-    )
+    # --------------------------------------------------------
+    # No values
+    # --------------------------------------------------------
+
+    if row_type == "no_values":
+
+        return {
+            "y": round(
+                row["y"],
+                2
+            ),
+            "type": "no_values",
+            "parameter": parameter,
+            "values": {}
+        }
+
+    # --------------------------------------------------------
+    # Common value
+    # --------------------------------------------------------
+
+    if row_type == "common_value":
+
+        return {
+            "y": round(
+                row["y"],
+                2
+            ),
+            "type": "common_value",
+            "parameter": parameter,
+            "values": {
+                "ALL_MODELS":
+                    values[0]["text"]
+            }
+        }
+
+    # --------------------------------------------------------
+    # One value per model
+    # --------------------------------------------------------
+
+    if row_type == "model_row":
+
+        return {
+            "y": round(
+                row["y"],
+                2
+            ),
+            "type": "model_row",
+            "parameter": parameter,
+            "values": map_model_row(
+                values,
+                models
+            )
+        }
+
+    # --------------------------------------------------------
+    # Grouped values
+    # --------------------------------------------------------
+
+    if row_type == "grouped_row":
+
+        return {
+            "y": round(
+                row["y"],
+                2
+            ),
+            "type": "grouped_row",
+            "parameter": parameter,
+            "values": map_grouped_row(
+                values,
+                models
+            )
+        }
 
     return {
-        "y": round(row["y"], 2),
+        "y": round(
+            row["y"],
+            2
+        ),
+        "type": "unknown",
         "parameter": parameter,
-        "type": row_type,
-        "values": values
+        "values": {}
     }
 
 
 # ============================================================
-# 11. PARSE TABLE PAGE
+# 24. PARSE SOURCE 2 TABLE PAGE
 # ============================================================
 
 def parse_table_page(page):
+    """
+    Parse page 2 of Source 2.
+    """
 
-    models = detect_model_columns(page)
-
-    rows = group_words_into_rows(
-        page["words"]
+    models = detect_model_columns(
+        page
     )
+
+    # --------------------------------------------------------
+    # Validate models
+    # --------------------------------------------------------
+
+    detected_names = [
+        model["model"]
+        for model in models
+    ]
+
+    expected_names = MODELS
+
+    if detected_names != expected_names:
+
+        raise ValueError(
+            "\n"
+            "Source 2 model detection failed.\n"
+            f"Expected:\n{expected_names}\n"
+            f"Detected:\n{detected_names}\n"
+        )
+
+    # --------------------------------------------------------
+    # Group physical PDF lines
+    # --------------------------------------------------------
+
+    physical_rows = group_words_into_rows(
+        page["words"],
+        y_tolerance=3
+    )
+
+    # --------------------------------------------------------
+    # Parse each physical row
+    # --------------------------------------------------------
 
     parsed_rows = []
 
-    for row in rows:
+    for row in physical_rows:
+
+        parsed = parse_physical_row(
+            row,
+            models
+        )
+
+        if parsed is None:
+            continue
 
         parsed_rows.append(
-            parse_row(
-                row,
-                models,
-                rows
-            )
+            parsed
         )
+
+    # --------------------------------------------------------
+    # Merge logical continuation rows
+    # --------------------------------------------------------
+
+    parsed_rows = merge_continuation_rows(
+        parsed_rows,
+        models
+    )
 
     return models, parsed_rows
 
 
 # ============================================================
-# 12. PRINT
+# 25. PRINT MODELS
 # ============================================================
 
-def print_parsed_table(models, rows):
+def print_models(
+    models
+):
 
     print()
     print("=" * 100)
@@ -435,67 +1412,83 @@ def print_parsed_table(models, rows):
             f"x={model['x']:.2f}"
         )
 
-    print()
+
+# ============================================================
+# 26. PRINT PARSED TABLE
+# ============================================================
+
+def print_parsed_table(
+    models,
+    rows
+):
+
+    print_models(
+        models
+    )
 
     for row in rows:
 
         if row["type"] == "no_values":
             continue
 
+        print()
         print("=" * 100)
 
         print(
-            f"Y         : {row['y']:.2f}"
+            f"Y         : "
+            f"{row['y']:.2f}"
         )
 
         print(
-            f"Parameter : {row['parameter']}"
+            f"Parameter : "
+            f"{row['parameter']}"
         )
 
         print(
-            f"Type      : {row['type']}"
+            f"Type      : "
+            f"{row['type']}"
         )
 
         print("-" * 100)
 
-        for value in row["values"]:
+        for key, value in row["values"].items():
 
             print(
-                f"x={value['x']:.2f} -> {value['text']}"
+                f"{key} -> {value}"
             )
 
 
 # ============================================================
-# 13. MAIN
+# 27. BUILD OUTPUT
 # ============================================================
 
-if __name__ == "__main__":
+def build_output(
+    models,
+    rows
+):
+    """
+    Build final parsed JSON.
+    """
 
-    input_path = Path(
-        "data/extracted/source_2.json"
-    )
-
-    output_path = Path(
-        "data/parsed/source_2.json"
-    )
-
-    pages = load_extracted_pdf(
-        input_path
-    )
-
-    page = pages[1]
-
-    models, rows = parse_table_page(
-        page
-    )
-
-    parsed_data = {
+    return {
+        "source": "source_2",
+        "page": 2,
         "models": [
             model["model"]
             for model in models
         ],
         "rows": rows
     }
+
+
+# ============================================================
+# 28. SAVE OUTPUT
+# ============================================================
+
+def save_output(
+    output_path,
+    data
+):
 
     output_path.parent.mkdir(
         parents=True,
@@ -508,11 +1501,78 @@ if __name__ == "__main__":
     ) as f:
 
         json.dump(
-            parsed_data,
+            data,
             f,
             indent=4,
             ensure_ascii=False
         )
+
+
+# ============================================================
+# 29. MAIN
+# ============================================================
+
+def main():
+
+    print()
+    print("=" * 100)
+    print("SOURCE 2 LAYOUT PARSER")
+    print("=" * 100)
+
+    print(
+        f"Input : {INPUT_PATH}"
+    )
+
+    print(
+        f"Output: {OUTPUT_PATH}"
+    )
+
+    # --------------------------------------------------------
+    # Load extracted PDF
+    # --------------------------------------------------------
+
+    pages = load_extracted_pdf(
+        INPUT_PATH
+    )
+
+    if len(pages) < 2:
+
+        raise ValueError(
+            "source_2.json does not contain page 2."
+        )
+
+    # Python index 1 = PDF page 2
+    page = pages[1]
+
+    # --------------------------------------------------------
+    # Parse
+    # --------------------------------------------------------
+
+    models, rows = parse_table_page(
+        page
+    )
+
+    # --------------------------------------------------------
+    # Build output
+    # --------------------------------------------------------
+
+    parsed_data = build_output(
+        models,
+        rows
+    )
+
+    # --------------------------------------------------------
+    # Save
+    # --------------------------------------------------------
+
+    save_output(
+        OUTPUT_PATH,
+        parsed_data
+    )
+
+    # --------------------------------------------------------
+    # Print
+    # --------------------------------------------------------
 
     print_parsed_table(
         models,
@@ -521,7 +1581,18 @@ if __name__ == "__main__":
 
     print()
     print("=" * 100)
+
     print(
-        f"Parsed JSON saved to: {output_path}"
+        f"Parsed JSON saved to: "
+        f"{OUTPUT_PATH}"
     )
+
     print("=" * 100)
+
+
+# ============================================================
+# 30. ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+    main()

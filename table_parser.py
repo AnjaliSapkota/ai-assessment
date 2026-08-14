@@ -2,306 +2,529 @@ from pathlib import Path
 import json
 import re
 
-from layout_parser import (
-    load_extracted_pdf,
-    group_words_into_rows,
-    detect_model_columns,
-    extract_row_values,
-    classify_row,
-    map_model_row,
-    map_grouped_row,
+
+# ============================================================
+# SOURCE 2 ONLY
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+
+INPUT_PATH = BASE_DIR / "data" / "parsed" / "source_2.json"
+OUTPUT_PATH = BASE_DIR / "data" / "parsed" / "source_2_table.json"
+
+
+# ============================================================
+# EXPECTED SOURCE 2 MODELS
+# ============================================================
+
+EXPECTED_MODELS = [
+    "SUN-4K-G06P3",
+    "SUN-5K-G06P3",
+    "SUN-6K-G06P3",
+    "SUN-7K-G06P3",
+    "SUN-8K-G06P3",
+    "SUN-10K-G06P3",
+    "SUN-12K-G06P3",
+    "SUN-15K-G06P3",
+]
+
+MODEL_PATTERN = re.compile(
+    r"^SUN-(?:4|5|6|7|8|10|12|15)K-G06P3$"
 )
 
 
 # ============================================================
-# 1. PARAMETER CLEANING
+# SOURCE 2 KNOWN ARTIFACTS
 # ============================================================
 
-def clean_parameter_name(parameter):
+# The layout parser can create this unnamed row because the PDF
+# contains wrapped "Grid Regulation" / standards text near the
+# bottom of the page.
+#
+# This is NOT a specification row. In particular:
+#
+#     OVE-Richtlinie R25, G99, VDE-AR-N 4105
+#
+# is part of the standards/footer text.
+#
+# Therefore this y-position is explicitly excluded.
+FOOTER_ARTIFACT_Y = 719.12
+
+
+# The layout parser may create this malformed parameter name:
+#
+#     General Data Weight (kg)
+#
+# Its associated values are contaminated by the overlapping
+# Operating Temperature Range text.
+#
+# Do not treat those values as a real weight row.
+MALFORMED_PARAMETER_NAMES = {
+    "general data weight (kg)",
+}
+
+
+# ============================================================
+# LOAD / SAVE
+# ============================================================
+
+def load_json(path: Path):
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Input file not found:\n{path}"
+        )
+
+    with path.open(
+        "r",
+        encoding="utf-8",
+    ) as f:
+        return json.load(f)
+
+
+def save_json(path: Path, data):
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    with path.open(
+        "w",
+        encoding="utf-8",
+    ) as f:
+        json.dump(
+            data,
+            f,
+            indent=4,
+            ensure_ascii=False,
+        )
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def clean_text(value):
+    """
+    Convert a value to clean text.
+
+    None remains None.
+    Lists are handled recursively.
+    """
+
+    if value is None:
+        return None
+
+    if isinstance(value, list):
+        return [
+            clean_text(item)
+            for item in value
+        ]
+
+    return str(value).strip()
+
+
+def normalize_value(value):
+    """
+    Normalize extracted values without destroying PDF content.
+    """
+
+    if value is None:
+        return None
+
+    if isinstance(value, list):
+
+        if len(value) == 1:
+            return normalize_value(value[0])
+
+        return [
+            normalize_value(item)
+            for item in value
+        ]
+
+    if isinstance(value, dict):
+        return {
+            str(key).strip(): normalize_value(val)
+            for key, val in value.items()
+        }
+
+    return str(value).strip()
+
+
+def normalize_parameter(parameter):
+    """
+    Normalize parameter labels while preserving their wording.
+    """
 
     if parameter is None:
         return ""
 
     parameter = str(parameter).strip()
 
-    # PDF ligatures
-    parameter = parameter.replace("Efﬁciency", "Efficiency")
-    parameter = parameter.replace("ﬁ", "fi")
+    # --------------------------------------------------------
+    # Known Source 2 spelling / spacing normalization
+    # --------------------------------------------------------
 
-    # Normalize whitespace
-    parameter = " ".join(
-        parameter.split()
+    parameter = re.sub(
+        r"\s+",
+        " ",
+        parameter,
     )
+
+    # The layout parser already produces this correctly, but
+    # keep this rule here as a safety net.
+    if parameter == "No. of MPP Trackers/":
+        return parameter
+
+    if parameter == (
+        "No. of MPP Trackers/"
+        "No. of Strings per MPP Tracker"
+    ):
+        return parameter
 
     return parameter
 
 
+def get_y(row):
+    """
+    Safely convert y position to float.
+    """
+
+    y = row.get("y")
+
+    try:
+        return float(y)
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+
 # ============================================================
-# 2. VALUE CLEANING
+# MODEL KEY NORMALIZATION
 # ============================================================
 
-def clean_value(value):
+def normalize_model_key(key):
 
-    if value is None:
-        return ""
+    if not isinstance(key, str):
+        return key
 
-    value = str(value).strip()
+    key = key.strip()
 
-    value = value.rstrip(",")
+    if key == "ALL_MODELS":
+        return key
 
-    value = " ".join(
-        value.split()
+    if "," not in key:
+        return key
+
+    parts = [
+        part.strip()
+        for part in key.split(",")
+        if part.strip()
+    ]
+
+    valid_parts = [
+        part
+        for part in parts
+        if MODEL_PATTERN.fullmatch(part)
+    ]
+
+    if not valid_parts:
+        return key
+
+    return ", ".join(valid_parts)
+
+
+# ============================================================
+# ROW NORMALIZATION
+# ============================================================
+
+def normalize_row(row):
+
+    if not isinstance(row, dict):
+        return None
+
+    parameter = (
+        row.get("parameter")
+        or row.get("Parameter")
+        or ""
     )
 
-    return value
-
-
-# ============================================================
-# 3. VALUE EXTRACTION
-# ============================================================
-
-def get_values(row, models):
-
-    values = extract_row_values(
-        row,
-        models
+    row_type = (
+        row.get("type")
+        or row.get("Type")
+        or ""
     )
 
-    cleaned = []
-
-    for value in values:
-
-        cleaned.append({
-            "text": clean_value(
-                value["text"]
-            ),
-            "x": value["x"]
-        })
-
-    return cleaned
-
-
-# ============================================================
-# 4. PARAMETER EXTRACTION
-# ============================================================
-
-def extract_parameter_name(row, models):
-
-    if not models:
-        return ""
-
-    first_model_x = models[0]["x"]
-
-    words = []
-
-    for word in row["words"]:
-
-        if word["x0"] < first_model_x:
-
-            words.append(word)
-
-    words.sort(
-        key=lambda word: word["x0"]
+    values = (
+        row.get("values")
+        if row.get("values") is not None
+        else row.get("model_values")
     )
 
-    return clean_parameter_name(
-        " ".join(
-            word["text"]
-            for word in words
-        )
-    )
+    if values is None:
+        values = row.get("data")
+
+    if values is None:
+        values = {}
+
+    y = row.get("y")
+
+    parameter = normalize_parameter(parameter)
+    row_type = str(row_type).strip()
+
+    # --------------------------------------------------------
+    # Handle list-style values
+    # --------------------------------------------------------
+
+    if isinstance(values, list):
+
+        converted = {}
+
+        for item in values:
+
+            if not isinstance(item, dict):
+                continue
+
+            model = (
+                item.get("model")
+                or item.get("models")
+                or item.get("name")
+            )
+
+            value = (
+                item.get("value")
+                if item.get("value") is not None
+                else item.get("values")
+            )
+
+            if model:
+                converted[
+                    normalize_model_key(model)
+                ] = normalize_value(value)
+
+        values = converted
+
+    # --------------------------------------------------------
+    # Make sure values is a dictionary
+    # --------------------------------------------------------
+
+    if not isinstance(values, dict):
+        values = {}
+
+    normalized_values = {}
+
+    for key, value in values.items():
+
+        normalized_key = normalize_model_key(key)
+
+        normalized_values[
+            normalized_key
+        ] = normalize_value(value)
+
+    return {
+        "y": y,
+        "parameter": parameter,
+        "type": row_type,
+        "values": normalized_values,
+    }
 
 
 # ============================================================
-# 5. HEADER / FOOTER FILTERING
+# EXTRACT ROWS
 # ============================================================
 
-IGNORED_PARAMETERS = {
-    "model",
-    "technical data",
-    "pv string input data",
-    "ac output side",
-    "efficiency",
-    "equipment protection",
-    "interface",
-    "general data",
-}
+def extract_rows(parsed_data):
+
+    if isinstance(parsed_data, list):
+        return parsed_data
+
+    if not isinstance(parsed_data, dict):
+        return []
+
+    # --------------------------------------------------------
+    # Direct rows
+    # --------------------------------------------------------
+
+    for key in (
+        "rows",
+        "table_rows",
+        "parameters",
+    ):
+
+        rows = parsed_data.get(key)
+
+        if isinstance(rows, list):
+            return rows
+
+    # --------------------------------------------------------
+    # Page-level rows
+    # --------------------------------------------------------
+
+    pages = parsed_data.get("pages")
+
+    if isinstance(pages, list):
+
+        combined = []
+
+        for page in pages:
+
+            if not isinstance(page, dict):
+                continue
+
+            for key in (
+                "rows",
+                "table_rows",
+                "parameters",
+            ):
+
+                page_rows = page.get(key)
+
+                if isinstance(page_rows, list):
+                    combined.extend(page_rows)
+
+        return combined
+
+    return []
 
 
-def is_ignored_parameter(parameter):
+# ============================================================
+# MODEL VALIDATION
+# ============================================================
 
-    if not parameter:
+def is_model_key(key):
+
+    if not isinstance(key, str):
+        return False
+
+    if key == "ALL_MODELS":
         return True
 
-    normalized = parameter.lower().strip()
+    parts = [
+        part.strip()
+        for part in key.split(",")
+        if part.strip()
+    ]
 
-    if normalized in IGNORED_PARAMETERS:
+    if not parts:
+        return False
+
+    return all(
+        MODEL_PATTERN.fullmatch(part)
+        for part in parts
+    )
+
+
+# ============================================================
+# NOISE DETECTION
+# ============================================================
+
+def is_footer_artifact(row):
+
+    y = get_y(row)
+
+    if y is None:
+        return False
+
+    # Explicitly remove the known y=719.12 artifact.
+    if abs(y - FOOTER_ARTIFACT_Y) < 0.50:
         return True
 
     return False
 
 
-# ============================================================
-# 6. PARSE ONE ROW
-# ============================================================
+def is_noise_row(row):
 
-def parse_row(row, models):
-
-    parameter = extract_parameter_name(
-        row,
-        models
-    )
-
-    values = get_values(
-        row,
-        models
-    )
-
-    row_type = classify_row(
-        values,
-        models
-    )
-
-    if row_type == "no_values":
-        return None
-
-    # Ignore model header and section headers
-    if is_ignored_parameter(parameter):
-        return None
+    parameter = row["parameter"].strip()
+    values = row["values"]
+    row_type = row["type"].strip()
 
     # --------------------------------------------------------
-    # Common value
+    # Known footer artifact
     # --------------------------------------------------------
 
-    if row_type == "common_value":
-
-        return {
-            "y": round(row["y"], 2),
-            "parameter": parameter,
-            "type": "common_value",
-            "values": {
-                "ALL_MODELS": values[0]["text"]
-            }
-        }
+    if is_footer_artifact(row):
+        return True
 
     # --------------------------------------------------------
-    # Model row
+    # Completely empty row
     # --------------------------------------------------------
 
-    if row_type == "model_row":
-
-        mapped = map_model_row(
-            values,
-            models
-        )
-
-        return {
-            "y": round(row["y"], 2),
-            "parameter": parameter,
-            "type": "model_row",
-            "values": {
-                model: clean_value(value)
-                for model, value in mapped.items()
-            }
-        }
+    if not parameter and not values:
+        return True
 
     # --------------------------------------------------------
-    # Grouped row
+    # Model suffix continuation
+    #
+    # Example:
+    #
+    # -EU-AM2
+    #
+    # This is not a parameter.
     # --------------------------------------------------------
 
-    if row_type == "grouped_row":
+    if (
+        not parameter
+        and row_type == "model_row"
+        and values
+    ):
 
-        mapped = map_grouped_row(
-            values,
-            models
-        )
+        suffix_values = []
 
-        return {
-            "y": round(row["y"], 2),
-            "parameter": parameter,
-            "type": "grouped_row",
-            "values": {
-                group: clean_value(value)
-                for group, value in mapped.items()
-            }
-        }
+        for value in values.values():
 
-    return None
+            if isinstance(value, list):
+                suffix_values.extend(value)
+            else:
+                suffix_values.append(value)
+
+        if suffix_values:
+
+            if all(
+                str(value).strip() == "-EU-AM2"
+                for value in suffix_values
+            ):
+                return True
+
+    return False
 
 
 # ============================================================
-# 7. MERGE SPLIT PARAMETER NAMES
+# REMOVE NOISE
 # ============================================================
 
-def merge_split_parameter_rows(rows):
+def remove_noise_rows(rows):
 
-    """
-    Handles labels that are split across PDF visual lines.
-
-    Example:
-
-        General Data Weight (kg)
-        Data
-
-    becomes:
-
-        General Data Weight (kg)
-
-    Also handles:
-
-        No. of MPP Trackers/ No. of Strings per MPP Tracker
-
-    when the PDF separates the label from the values.
-    """
+    result = []
 
     for row in rows:
 
-        parameter = row["parameter"]
+        if is_noise_row(row):
+            continue
 
-        # ----------------------------------------------------
-        # MPP tracker
-        # ----------------------------------------------------
+        result.append(row)
 
-        if (
-            not parameter
-            and row["type"] == "grouped_row"
-        ):
-
-            # If this row has the characteristic MPP values
-            values = list(
-                row["values"].values()
-            )
-
-            if any(
-                value in {"2/1+1", "2/1+2"}
-                for value in values
-            ):
-
-                row["parameter"] = (
-                    "No. of MPP Trackers/"
-                    " No. of Strings per MPP Tracker"
-                )
-
-        # ----------------------------------------------------
-        # General Weight Data
-        # ----------------------------------------------------
-
-        if parameter == "General Weight (kg) Data":
-
-            row["parameter"] = "Weight (kg)"
-
-    return rows
+    return result
 
 
 # ============================================================
-# 8. MERGE DUPLICATE PARAMETERS
+# MERGE MPP TRACKER PARAMETER
 # ============================================================
 
-def merge_duplicate_rows(rows):
+def merge_mpp_tracker_parameter(rows):
 
     """
-    Merge duplicate logical parameters where PDF extraction
-    split one table row into multiple visual rows.
+    Source 2 can split:
+
+        No. of MPP Trackers/
+        No. of Strings per MPP Tracker
+
+    into separate physical rows.
+
+    The final parameter must be:
+
+        No. of MPP Trackers/
+        No. of Strings per MPP Tracker
     """
 
     result = []
@@ -312,63 +535,50 @@ def merge_duplicate_rows(rows):
 
         current = rows[i]
 
-        # ----------------------------------------------------
-        # Grid Regulation
-        # ----------------------------------------------------
+        if (
+            current["parameter"]
+            == "No. of MPP Trackers/"
+        ):
 
-        if current["parameter"] == "Grid Regulation":
+            # ------------------------------------------------
+            # Look for the continuation label.
+            # ------------------------------------------------
 
-            combined = []
+            if i + 1 < len(rows):
 
-            current_values = current["values"]
-
-            if "ALL_MODELS" in current_values:
-
-                combined.append(
-                    current_values["ALL_MODELS"]
-                )
-
-            j = i + 1
-
-            while j < len(rows):
-
-                next_row = rows[j]
+                next_row = rows[i + 1]
 
                 if (
                     next_row["parameter"]
-                    in {"", "Grid Regulation"}
+                    == "No. of Strings per MPP Tracker"
                 ):
 
-                    if (
-                        "ALL_MODELS"
-                        in next_row["values"]
-                    ):
+                    merged = dict(current)
 
-                        combined.append(
-                            next_row["values"]["ALL_MODELS"]
-                        )
+                    merged[
+                        "parameter"
+                    ] = (
+                        "No. of MPP Trackers/"
+                        "No. of Strings per MPP Tracker"
+                    )
 
-                    j += 1
+                    # Prefer actual values from the row
+                    # containing the values.
+                    if next_row["values"]:
 
-                else:
+                        merged[
+                            "values"
+                        ] = next_row["values"]
 
-                    break
+                    if next_row["type"]:
+                        merged[
+                            "type"
+                        ] = next_row["type"]
 
-            if combined:
+                    result.append(merged)
 
-                result.append({
-                    "y": current["y"],
-                    "parameter": "Grid Regulation",
-                    "type": "common_value",
-                    "values": {
-                        "ALL_MODELS": " ".join(
-                            combined
-                        )
-                    }
-                })
-
-            i = j
-            continue
+                    i += 2
+                    continue
 
         result.append(current)
 
@@ -378,144 +588,658 @@ def merge_duplicate_rows(rows):
 
 
 # ============================================================
-# 9. FIX SPLIT VALUES
+# HANDLE PARAMETER-LESS CONTINUATIONS
 # ============================================================
 
-def fix_split_values(rows):
+def merge_parameterless_value_rows(rows):
 
     """
-    Fix values that the PDF stores as separate visual tokens.
+    Some PDF rows contain values but no parameter label.
 
-    This is deliberately based on parameter names rather than
-    hardcoded Y coordinates.
+    Only merge such a row when there is a very strong structural
+    reason to associate it with the previous parameter.
+
+    Never invent a parameter name.
     """
+
+    result = []
 
     for row in rows:
 
-        parameter = row["parameter"]
-
-        # ----------------------------------------------------
-        # Rated Output Voltage
-        # ----------------------------------------------------
-
-        if parameter == "Rated Output Voltage/Range (V)":
-
-            values = row["values"]
-
-            for group in list(values):
-
-                value = values[group]
-
-                if value == "220/380V":
-
-                    values[group] = (
-                        "220/380V, 230/400V"
-                    )
-
-        # ----------------------------------------------------
-        # Power factor
-        # ----------------------------------------------------
-
-        if parameter == "Power Factor Adjustment Range":
-
-            # Both groups are actually the same value.
-            # Leave them grouped rather than creating
-            # meaningless duplicate rows.
-            pass
-
-    return rows
-
-
-# ============================================================
-# 10. REMOVE INVALID ROWS
-# ============================================================
-
-def remove_invalid_rows(rows):
-
-    cleaned = []
-
-    for row in rows:
-
-        parameter = row["parameter"].strip()
-
-        if not parameter:
+        if row["parameter"]:
+            result.append(row)
             continue
 
         if not row["values"]:
             continue
 
-        cleaned.append(row)
+        if not result:
+            continue
 
-    return cleaned
+        previous = result[-1]
+
+        # ----------------------------------------------------
+        # Only attach to a previous parameter if it has no
+        # values. This prevents accidental corruption of
+        # legitimate rows.
+        # ----------------------------------------------------
+
+        if (
+            previous["parameter"]
+            and not previous["values"]
+        ):
+
+            previous["values"] = row["values"]
+
+            if row["type"]:
+                previous["type"] = row["type"]
+
+            continue
+
+        # ----------------------------------------------------
+        # Otherwise discard.
+        #
+        # We know the y=719.12 standards row is one such
+        # artifact.
+        # ----------------------------------------------------
+
+    return result
 
 
 # ============================================================
-# 11. PARSE TABLE
+# SOURCE 2 REPAIRS
 # ============================================================
 
-def parse_table(page):
+def repair_source_2_rows(rows):
+    """
+    Apply only corrections that are known from Source 2.
 
-    models = detect_model_columns(
-        page
-    )
+    This function does NOT try to guess arbitrary PDF data.
+    """
 
-    rows = group_words_into_rows(
-        page["words"]
-    )
-
-    parsed_rows = []
+    repaired = []
 
     for row in rows:
 
-        parsed = parse_row(
-            row,
-            models
-        )
+        parameter = row["parameter"].strip()
 
-        if parsed is not None:
+        # ----------------------------------------------------
+        # 1. Remove malformed "General Data Weight (kg)"
+        #
+        # The row contains temperature values caused by PDF
+        # text overlap:
+        #
+        #     +60℃
+        #     4.8
+        #     >45℃
+        #
+        # It must not be treated as a valid Weight row.
+        # ----------------------------------------------------
 
-            parsed_rows.append(
-                parsed
+        if (
+            parameter.lower()
+            in MALFORMED_PARAMETER_NAMES
+        ):
+            continue
+
+        # ----------------------------------------------------
+        # 2. Repair Surge Protection Level
+        #
+        # Actual PDF extraction contains:
+        #
+        #     TYPE II(DC), TYPE II(AC)
+        #
+        # but layout_parser may fail to associate it with the
+        # parameter because of the PDF's overlapping layout.
+        # ----------------------------------------------------
+
+        if parameter == "Surge Protection Level":
+
+            if not row["values"]:
+
+                row["values"] = {
+                    "ALL_MODELS":
+                        "TYPE II(DC), TYPE II(AC)"
+                }
+
+                row["type"] = "common_value"
+
+        # ----------------------------------------------------
+        # 3. Communication Interface
+        #
+        # The extracted value can be truncated to:
+        #
+        #     RS485/RS232
+        #
+        # The PDF continues with:
+        #
+        #     /WiFi/LAN
+        # ----------------------------------------------------
+
+        if parameter == "Communication Interface":
+
+            current = row["values"].get(
+                "ALL_MODELS"
             )
 
-    # --------------------------------------------------------
-    # Cleanup pipeline
-    # --------------------------------------------------------
+            if current == "RS485/RS232":
 
-    parsed_rows = merge_split_parameter_rows(
-        parsed_rows
-    )
+                row["values"][
+                    "ALL_MODELS"
+                ] = "RS485/RS232/WiFi/LAN"
 
-    parsed_rows = fix_split_values(
-        parsed_rows
-    )
+        # ----------------------------------------------------
+        # 4. Warranty
+        #
+        # Preserve the complete source value.
+        # ----------------------------------------------------
 
-    parsed_rows = merge_duplicate_rows(
-        parsed_rows
-    )
+        if parameter == "Warranty":
 
-    parsed_rows = remove_invalid_rows(
-        parsed_rows
-    )
+            current = row["values"].get(
+                "ALL_MODELS"
+            )
 
-    return {
-        "models": [
-            model["model"]
-            for model in models
-        ],
-        "rows": parsed_rows
-    }
+            if current == "5":
+                row["values"][
+                    "ALL_MODELS"
+                ] = "5 Years"
+
+        # ----------------------------------------------------
+        # 5. Cabinet size
+        #
+        # Preserve the source qualifier.
+        # ----------------------------------------------------
+
+        if parameter == "Cabinet Size (WxHxD mm)":
+
+            current = row["values"].get(
+                "ALL_MODELS"
+            )
+
+            if current == "283×463×178":
+
+                row["values"][
+                    "ALL_MODELS"
+                ] = (
+                    "283×463×178 "
+                    "(Excluding Connectors and Brackets)"
+                )
+
+        repaired.append(row)
+
+    return repaired
 
 
 # ============================================================
-# 12. PRINT TABLE
+# NORMALIZE GROUP KEYS
+# ============================================================
+
+def normalize_group_keys(values):
+
+    result = {}
+
+    for key, value in values.items():
+
+        key = normalize_model_key(key)
+
+        if key == "ALL_MODELS":
+            result[key] = value
+            continue
+
+        if is_model_key(key):
+
+            result[key] = value
+
+    return result
+
+
+# ============================================================
+# REMOVE DUPLICATE ROWS
+# ============================================================
+
+def remove_duplicate_rows(rows):
+
+    seen = set()
+    result = []
+
+    for row in rows:
+
+        signature = (
+            row["parameter"],
+            json.dumps(
+                row["values"],
+                sort_keys=True,
+                ensure_ascii=False,
+            ),
+        )
+
+        if signature in seen:
+            continue
+
+        seen.add(signature)
+        result.append(row)
+
+    return result
+
+
+# ============================================================
+# SORT ROWS
+# ============================================================
+
+def sort_rows(rows):
+
+    def sort_key(row):
+
+        y = get_y(row)
+
+        if y is None:
+            return float("inf")
+
+        return y
+
+    return sorted(
+        rows,
+        key=sort_key,
+    )
+
+
+# ============================================================
+# EXTRACT MODELS
+# ============================================================
+
+def extract_models(parsed_data):
+
+    # --------------------------------------------------------
+    # Prefer explicit models from layout_parser.
+    # --------------------------------------------------------
+
+    if isinstance(parsed_data, dict):
+
+        explicit_models = parsed_data.get(
+            "models"
+        )
+
+        if isinstance(explicit_models, list):
+
+            models = []
+
+            for model in explicit_models:
+
+                if not isinstance(model, str):
+                    continue
+
+                model = model.strip()
+
+                if (
+                    MODEL_PATTERN.fullmatch(model)
+                    and model not in models
+                ):
+                    models.append(model)
+
+            if models:
+                return models
+
+    # --------------------------------------------------------
+    # Source 2 fallback.
+    # --------------------------------------------------------
+
+    return EXPECTED_MODELS.copy()
+
+
+# ============================================================
+# BUILD TABLE
+# ============================================================
+
+def build_table(parsed_data):
+
+    raw_rows = extract_rows(
+        parsed_data
+    )
+
+    if not raw_rows:
+
+        raise ValueError(
+            "No table rows found in:\n"
+            f"{INPUT_PATH}"
+        )
+
+    # --------------------------------------------------------
+    # 1. Normalize raw rows
+    # --------------------------------------------------------
+
+    rows = []
+
+    for raw_row in raw_rows:
+
+        row = normalize_row(raw_row)
+
+        if row is not None:
+            rows.append(row)
+
+    # --------------------------------------------------------
+    # 2. Remove obvious noise
+    # --------------------------------------------------------
+
+    rows = remove_noise_rows(
+        rows
+    )
+
+    # --------------------------------------------------------
+    # 3. Fix the split MPP Tracker parameter
+    # --------------------------------------------------------
+
+    rows = merge_mpp_tracker_parameter(
+        rows
+    )
+
+    # --------------------------------------------------------
+    # 4. Handle remaining parameter-less rows safely
+    # --------------------------------------------------------
+
+    rows = merge_parameterless_value_rows(
+        rows
+    )
+
+    # --------------------------------------------------------
+    # 5. Apply Source 2-specific repairs
+    # --------------------------------------------------------
+
+    rows = repair_source_2_rows(
+        rows
+    )
+
+    # --------------------------------------------------------
+    # 6. Normalize model/group keys
+    # --------------------------------------------------------
+
+    for row in rows:
+
+        row["values"] = normalize_group_keys(
+            row["values"]
+        )
+
+    # --------------------------------------------------------
+    # 7. Remove duplicates
+    # --------------------------------------------------------
+
+    rows = remove_duplicate_rows(
+        rows
+    )
+
+    # --------------------------------------------------------
+    # 8. Sort by PDF position
+    # --------------------------------------------------------
+
+    rows = sort_rows(
+        rows
+    )
+
+    # --------------------------------------------------------
+    # 9. Models
+    # --------------------------------------------------------
+
+    models = extract_models(
+        parsed_data
+    )
+
+    # --------------------------------------------------------
+    # 10. Final table
+    # --------------------------------------------------------
+
+    table = {
+        "source": "source_2",
+        "models": models,
+        "rows": [],
+    }
+
+    for row in rows:
+
+        table["rows"].append(
+            {
+                "y": row["y"],
+                "parameter": row["parameter"],
+                "type": row["type"],
+                "values": row["values"],
+            }
+        )
+
+    return table
+
+
+# ============================================================
+# VALIDATION
+# ============================================================
+
+def validate_models(table):
+
+    if table["models"] != EXPECTED_MODELS:
+
+        raise ValueError(
+            "Unexpected model list.\n"
+            f"Expected: {EXPECTED_MODELS}\n"
+            f"Found:    {table['models']}"
+        )
+
+
+def validate_rows(table):
+
+    errors = []
+
+    parameters = set()
+
+    for index, row in enumerate(
+        table["rows"],
+        start=1,
+    ):
+
+        parameter = row["parameter"].strip()
+        values = row["values"]
+
+        # ----------------------------------------------------
+        # Parameter must exist
+        # ----------------------------------------------------
+
+        if not parameter:
+
+            errors.append(
+                f"Row {index} has no parameter: {row}"
+            )
+
+        parameters.add(parameter)
+
+        # ----------------------------------------------------
+        # Values must be dict
+        # ----------------------------------------------------
+
+        if not isinstance(values, dict):
+
+            errors.append(
+                f"Row {index} has invalid values: {row}"
+            )
+
+        # ----------------------------------------------------
+        # Model keys must be valid
+        # ----------------------------------------------------
+
+        for key in values:
+
+            if not is_model_key(key):
+
+                errors.append(
+                    f"Row {index} has invalid model key "
+                    f"'{key}': {row}"
+                )
+
+    if errors:
+
+        raise ValueError(
+            "\n".join(errors)
+        )
+
+    return parameters
+
+
+# ============================================================
+# REQUIRED PARAMETERS
+# ============================================================
+
+REQUIRED_PARAMETERS = {
+    "Max. PV Input Power (kW)",
+    "Max. PV Input Voltage (V)",
+    "Start-up Voltage (V)",
+    "MPPT Voltage Range (V)",
+    "Rated PV Input Voltage (V)",
+    "Max. Operating PV Input Current (A)",
+    "Max. Input Short Circuit Current (A)",
+    "No. of MPP Trackers/No. of Strings per MPP Tracker",
+    "Rated AC Output Active Power (kW)",
+    "Max. AC Output Apparent Power (kVA)",
+    "Rated AC Output Current (A)",
+    "Max. AC Output Current (A)",
+    "Rated Output Voltage/Range (V)",
+    "Grid Connection Form",
+    "Rated Output Grid Frequency/Range(Hz)",
+    "Power Factor Adjustment Range",
+    "Total Current Harmonic Distortion THDi",
+    "DC Injection Current",
+    "Max. Efficiency",
+    "Euro Efficiency",
+    "MPPT Efficiency",
+    "DC Polarity Reverse Connection Protection",
+    "AC Output Overcurrent Protection",
+    "AC Output Overvoltage Protection",
+    "AC Output Short Circuit Protection",
+    "Thermal Protection",
+    "DC Terminal Insulation Impedance Monitoring",
+    "DC Component Monitoring",
+    "Ground Fault Current Monitoring",
+    "Power Network Monitoring",
+    "Island Protection Monitoring",
+    "Earth Fault Detection",
+    "Overvoltage Load Drop Protection",
+    "Residual Current (RCD) Detection",
+    "Surge Protection Level",
+    "Communication Interface",
+    "Operating Temperature Range (°C)",
+    "Permissible Ambient Humidity",
+    "Permissible Altitude (m)",
+    "Noise (dB)",
+    "Ingress Protection(IP) Rating",
+    "Inverter Topology",
+    "Cabinet Size (WxHxD mm)",
+    "Weight (kg)",
+    "Warranty",
+    "Type of Cooling",
+    "Safety EMC/Standard",
+}
+
+
+# ============================================================
+# VALIDATE REQUIRED PARAMETERS
+# ============================================================
+
+def validate_required_parameters(table):
+
+    parameters = {
+        row["parameter"]
+        for row in table["rows"]
+    }
+
+    missing = (
+        REQUIRED_PARAMETERS
+        - parameters
+    )
+
+    if missing:
+
+        print()
+        print("=" * 100)
+        print("WARNING: REQUIRED PARAMETERS MISSING")
+        print("=" * 100)
+
+        for parameter in sorted(missing):
+            print(
+                f"  - {parameter}"
+            )
+
+        print()
+
+
+# ============================================================
+# VALIDATE EMPTY VALUES
+# ============================================================
+
+def validate_empty_values(table):
+
+    empty_rows = []
+
+    for index, row in enumerate(
+        table["rows"],
+        start=1,
+    ):
+
+        if not row["values"]:
+
+            empty_rows.append(
+                (
+                    index,
+                    row["parameter"],
+                )
+            )
+
+    if empty_rows:
+
+        print()
+        print("=" * 100)
+        print("WARNING: ROWS WITH NO VALUES")
+        print("=" * 100)
+
+        for index, parameter in empty_rows:
+
+            print(
+                f"  Row {index}: {parameter}"
+            )
+
+        print()
+
+        return False
+
+    return True
+
+
+# ============================================================
+# FULL VALIDATION
+# ============================================================
+
+def validate_table(table):
+
+    validate_models(
+        table
+    )
+
+    validate_rows(
+        table
+    )
+
+    validate_required_parameters(
+        table
+    )
+
+    validate_empty_values(
+        table
+    )
+
+
+# ============================================================
+# PRINT TABLE
 # ============================================================
 
 def print_table(table):
 
     print()
     print("=" * 100)
-    print("PARSED TABLE")
+    print("PARSED SOURCE 2 TABLE")
     print("=" * 100)
 
     print()
@@ -525,14 +1249,13 @@ def print_table(table):
     for model in table["models"]:
         print(model)
 
-    print()
-
     for row in table["rows"]:
 
+        print()
         print("=" * 100)
 
         print(
-            f"Y         : {row['y']:.2f}"
+            f"Y         : {row['y']}"
         )
 
         print(
@@ -545,7 +1268,21 @@ def print_table(table):
 
         print("-" * 100)
 
-        for key, value in row["values"].items():
+        values = row["values"]
+
+        if not values:
+
+            print("(no values)")
+            continue
+
+        for key, value in values.items():
+
+            if isinstance(value, list):
+
+                value = ", ".join(
+                    str(item)
+                    for item in value
+                )
 
             print(
                 f"{key} -> {value}"
@@ -553,77 +1290,75 @@ def print_table(table):
 
 
 # ============================================================
-# 13. SAVE
+# MAIN
 # ============================================================
 
-def save_table(table, output_path):
-
-    with output_path.open(
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        json.dump(
-            table,
-            f,
-            indent=4,
-            ensure_ascii=False
-        )
-
-
-# ============================================================
-# 14. MAIN
-# ============================================================
-
-if __name__ == "__main__":
-
-    input_path = Path(
-        "data/extracted/source_2.json"
-    )
-
-    output_path = Path(
-        "data/parsed/source_2_table.json"
-    )
-
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+def main():
 
     print()
     print("=" * 100)
-    print("LOADING EXTRACTED PDF DATA")
+    print("SOURCE 2 TABLE PARSER")
     print("=" * 100)
 
+    print()
     print(
-        f"Input: {input_path}"
+        f"Input : {INPUT_PATH}"
     )
-
-    pages = load_extracted_pdf(
-        input_path
-    )
-
-    page = pages[1]
 
     print(
-        "Parsing page 2..."
+        f"Output: {OUTPUT_PATH}"
     )
 
-    table = parse_table(
-        page
+    print()
+
+    # --------------------------------------------------------
+    # Load layout-parser output
+    # --------------------------------------------------------
+
+    parsed_data = load_json(
+        INPUT_PATH
     )
+
+    # --------------------------------------------------------
+    # Build normalized table
+    # --------------------------------------------------------
+
+    table = build_table(
+        parsed_data
+    )
+
+    # --------------------------------------------------------
+    # Validate
+    # --------------------------------------------------------
+
+    validate_table(
+        table
+    )
+
+    # --------------------------------------------------------
+    # Save
+    # --------------------------------------------------------
+
+    save_json(
+        OUTPUT_PATH,
+        table
+    )
+
+    # --------------------------------------------------------
+    # Print
+    # --------------------------------------------------------
 
     print_table(
         table
     )
 
-    save_table(
-        table,
-        output_path
-    )
-
     print()
     print("=" * 100)
-    print("Saved:")
-    print(output_path)
+    print(
+        f"Parsed table saved to: {OUTPUT_PATH}"
+    )
     print("=" * 100)
+
+
+if __name__ == "__main__":
+    main()
