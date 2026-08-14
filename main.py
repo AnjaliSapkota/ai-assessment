@@ -3,14 +3,27 @@ from pathlib import Path
 from ai_assessment.config import SOURCE_DOCUMENTS
 from ai_assessment.downloader import download_pdf
 from ai_assessment.pdf_inspector import inspect_pdf
+from ai_assessment.pdf_extractor import extract_words
 
 
 RAW_DATA_DIR = Path("data/raw")
 
 
 def main():
+
+    # extract
+    
+    for pdf_path in RAW_DATA_DIR.glob("*.pdf"):
+        extract_words(pdf_path)
+
+
+    # inspect
+
     for pdf_path in RAW_DATA_DIR.glob("*.pdf"):
         inspect_pdf(pdf_path)
+
+    # download
+
     # RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # for source_id, source in SOURCE_DOCUMENTS.items():
