@@ -3,19 +3,13 @@ import re
 from pathlib import Path
 
 
-# ============================================================
 # CONFIGURATION
-# ============================================================
-
 ROW_TOL = 3.0
 LABEL_MAX_X = 180.0
 MERGE_GAP = 10.0
 
 
-# ============================================================
 # LOAD EXTRACTED PDF DATA
-# ============================================================
-
 def load_extracted_words(path: Path):
     """
     Load word-level data produced by pdf_extractor.py.
@@ -46,19 +40,13 @@ def load_extracted_words(path: Path):
     return pages
 
 
-# ============================================================
-# FIND RELEVANT TABLE PAGE
-# ============================================================
+EXPECTED_MODEL_COLUMNS = 8
+
 
 def get_relevant_page(pages):
-    """
-    Find the page containing the 8-model technical specification table.
 
-    We do not hard-code page 2.
-
-    Instead, search every page for exactly eight model headers
-    beginning with 'SUN-'.
-    """
+    best_page = None
+    best_count = 0
 
     for page in pages:
 
@@ -70,25 +58,31 @@ def get_relevant_page(pages):
             if word["text"].startswith("SUN-")
         ]
 
-        if len(model_words) == 8:
-            return page
+        if len(model_words) > best_count:
+            best_count = len(model_words)
+            best_page = page
 
-    raise ValueError(
-        "Could not find a page containing the 8-model table header."
-    )
+    if best_page is None or best_count < 2:
+        raise ValueError(
+            "Could not find a page containing a multi-model "
+            "table header (no page had more than one 'SUN-' "
+            "prefixed word)."
+        )
+
+    if best_count != EXPECTED_MODEL_COLUMNS:
+        print(
+            f"WARNING: expected {EXPECTED_MODEL_COLUMNS} model "
+            f"columns (this pipeline's known document layout), "
+            f"found {best_count} on the best-matching page "
+            f"(page {best_page.get('page')}). Proceeding, but "
+            f"verify the extracted table against the source PDF."
+        )
+
+    return best_page
 
 
-# ============================================================
 # ROW CLUSTERING
-# ============================================================
-
 def cluster_rows(words, tolerance=ROW_TOL):
-    """
-    Group words that appear on the same visual row.
-
-    PDF text extraction does not necessarily preserve table rows,
-    so words are grouped using their vertical 'top' coordinate.
-    """
 
     words = sorted(
         words,
@@ -129,9 +123,7 @@ def cluster_rows(words, tolerance=ROW_TOL):
     return rows
 
 
-# ============================================================
 # FIND MODEL HEADER
-# ============================================================
 
 def find_header(rows):
     """
@@ -171,9 +163,7 @@ def find_header(rows):
     )
 
 
-# ============================================================
 # MODEL COLUMN CENTERS
-# ============================================================
 
 def build_column_bins(header_tokens):
     """
@@ -196,9 +186,7 @@ def build_column_bins(header_tokens):
     return model_names, centers
 
 
-# ============================================================
 # NEAREST MODEL COLUMN
-# ============================================================
 
 def nearest_column(x, centers):
     """
@@ -215,9 +203,7 @@ def nearest_column(x, centers):
     return index, min(distances)
 
 
-# ============================================================
 # NUMERIC / TECHNICAL TOKEN DETECTION
-# ============================================================
 
 def is_numeric_token(text):
     """
@@ -239,9 +225,7 @@ def is_numeric_token(text):
     return bool(re.match(pattern, text))
 
 
-# ============================================================
 # MERGE WRAPPED TABLE ROWS
-# ============================================================
 
 def merge_wrapped_rows(rows):
     """
@@ -324,9 +308,7 @@ def merge_wrapped_rows(rows):
     return merged
 
 
-# ============================================================
 # LABEL GARBLING DETECTION
-# ============================================================
 
 def detect_label_flags(label):
     """
@@ -351,9 +333,7 @@ def detect_label_flags(label):
     return flags
 
 
-# ============================================================
 # PARSE TABLE PAGE
-# ============================================================
 
 def parse_page(page):
     """
@@ -374,15 +354,11 @@ def parse_page(page):
 
     words = page["words"]
 
-    # --------------------------------------------------------
-    # STEP 1: CLUSTER WORDS INTO VISUAL ROWS
-    # --------------------------------------------------------
+    # CLUSTER WORDS INTO VISUAL ROWS
 
     rows_raw = cluster_rows(words)
 
-    # --------------------------------------------------------
-    # STEP 2: FIND MODEL HEADER
-    # --------------------------------------------------------
+    #  FIND MODEL HEADER
 
     header_tokens = find_header(rows_raw)
 
@@ -395,15 +371,11 @@ def parse_page(page):
         for token in header_tokens
     )
 
-    # --------------------------------------------------------
-    # STEP 3: MERGE WRAPPED LABEL ROWS
-    # --------------------------------------------------------
+    #  MERGE WRAPPED LABEL ROWS
 
     rows = merge_wrapped_rows(rows_raw)
 
-    # --------------------------------------------------------
-    # STEP 4: PARSE EACH TABLE ROW
-    # --------------------------------------------------------
+    #  PARSE EACH TABLE ROW
 
     fields = []
 
@@ -414,31 +386,21 @@ def parse_page(page):
             for word in row
         )
 
-        # ----------------------------------------------------
         # Ignore content above table
-        # ----------------------------------------------------
 
         if top < 70:
             continue
 
-        # ----------------------------------------------------
         # Ignore model header row
-        # ----------------------------------------------------
 
         if abs(top - header_top) <= ROW_TOL:
             continue
 
-        # ----------------------------------------------------
         # Ignore footer area
-        # ----------------------------------------------------
-
         if top > page["height"] - 40:
             continue
 
-        # ----------------------------------------------------
         # Separate label and value zones
-        # ----------------------------------------------------
-
         label_words = sorted(
             [
                 word
@@ -457,19 +419,13 @@ def parse_page(page):
             key=lambda word: word["x0"],
         )
 
-        # ----------------------------------------------------
         # Build label
-        # ----------------------------------------------------
-
         label = " ".join(
             word["text"]
             for word in label_words
         ).strip()
 
-        # ----------------------------------------------------
         # Build value tokens
-        # ----------------------------------------------------
-
         value_tokens = [
             (
                 word["text"],
@@ -478,16 +434,10 @@ def parse_page(page):
             for word in value_words
         ]
 
-        # ----------------------------------------------------
         # Detect parsing problems
-        # ----------------------------------------------------
-
         flags = detect_label_flags(label)
 
-        # ----------------------------------------------------
         # No value found
-        # ----------------------------------------------------
-
         if not value_tokens:
 
             fields.append(
@@ -503,30 +453,21 @@ def parse_page(page):
 
             continue
 
-        # ----------------------------------------------------
         # Identify numeric/technical tokens
-        # ----------------------------------------------------
-
         numeric_tokens = [
             text
             for text, _ in value_tokens
             if is_numeric_token(text)
         ]
 
-        # ----------------------------------------------------
         # Determine whether row is columnar
-        # ----------------------------------------------------
-
         is_columnar = (
             len(value_tokens) >= 2
             and len(value_tokens) <= 8
             and len(numeric_tokens) == len(value_tokens)
         )
 
-        # ====================================================
         # COLUMNAR VALUES
-        # ====================================================
-
         if is_columnar:
 
             per_model = {}
@@ -540,10 +481,7 @@ def parse_page(page):
                     centers,
                 )
 
-                # --------------------------------------------
                 # Detect two values assigned to same column
-                # --------------------------------------------
-
                 if column_index in used_columns:
 
                     flags.append(
@@ -562,18 +500,12 @@ def parse_page(page):
                     ),
                 }
 
-            # --------------------------------------------
             # Full 8-column row
-            # --------------------------------------------
-
             if len(value_tokens) == 8:
 
                 confidence = "per_model_columnar"
 
-            # --------------------------------------------
             # Partial / spanning row
-            # --------------------------------------------
-
             else:
 
                 confidence = "spanning_or_partial"
@@ -596,10 +528,7 @@ def parse_page(page):
                 }
             )
 
-        # ====================================================
         # SHARED VALUE
-        # ====================================================
-
         else:
 
             shared_text = " ".join(
@@ -626,20 +555,14 @@ def parse_page(page):
                 }
             )
 
-    # ========================================================
     # RETURN PARSED TABLE
-    # ========================================================
-
     return {
         "model_columns": model_names,
         "fields": fields,
     }
 
 
-# ============================================================
 # PARSE EXTRACTED PDF JSON
-# ============================================================
-
 def parse_pdf(
     extracted_path: Path,
     output_path: Path,
@@ -660,36 +583,24 @@ def parse_pdf(
         extracted_path
     )
 
-    # --------------------------------------------------------
     # Find table page automatically
-    # --------------------------------------------------------
-
     page = get_relevant_page(
         pages
     )
 
-    # --------------------------------------------------------
     # Parse table
-    # --------------------------------------------------------
-
     result = parse_page(
         page
     )
 
-    # --------------------------------------------------------
     # Add source metadata
-    # --------------------------------------------------------
-
     result["source_path"] = str(
         extracted_path
     )
 
     result["page"] = page["page"]
 
-    # --------------------------------------------------------
     # Save output
-    # --------------------------------------------------------
-
     output_path.parent.mkdir(
         parents=True,
         exist_ok=True,
