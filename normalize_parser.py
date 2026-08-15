@@ -1,72 +1,122 @@
 from pathlib import Path
 import json
+import sys
 
 
 # ============================================================
-# 1. PATHS
+# 1. SOURCE CONFIGURATION
+# ============================================================
+
+# Usage:
+#   uv run python normalize_parser.py source_1
+#   uv run python normalize_parser.py source_2
+#
+# If no argument is provided, source_1 is used.
+
+SOURCE = sys.argv[1] if len(sys.argv) > 1 else "source_1"
+
+if SOURCE not in {"source_1", "source_2"}:
+    raise ValueError(
+        "Invalid source. Use 'source_1' or 'source_2'."
+    )
+
+
+# ============================================================
+# 2. PATHS
 # ============================================================
 
 INPUT_PATH = Path(
-    "data/tables/source_2_table.json"
+    f"data/tables/{SOURCE}_table.json"
 )
 
 OUTPUT_PATH = Path(
-    "data/normalized/source_2.json"
+    f"data/normalized/{SOURCE}.json"
 )
 
 
 # ============================================================
-# 2. LOAD TABLE DATA
+# 3. LOAD TABLE DATA
 # ============================================================
 
 def load_table_data(path: Path):
     """Load output produced by table_parser.py."""
 
-    with path.open("r", encoding="utf-8") as f:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Input file not found: {path}"
+        )
+
+    with path.open(
+        "r",
+        encoding="utf-8"
+    ) as f:
+
         return json.load(f)
 
 
 # ============================================================
-# 3. NORMALIZE TEXT
+# 4. NORMALIZE TEXT
 # ============================================================
 
 def normalize_text(text):
-    """Clean small OCR / encoding issues."""
+    """
+    Clean small OCR / encoding issues without changing
+    the underlying technical meaning.
+    """
 
     if text is None:
         return None
 
     text = str(text).strip()
 
+    if not text:
+        return None
+
     replacements = {
+        # Encoding issues
         "Â°C": "°C",
-        "Efﬁciency": "Efficiency",
+        "Ã—": "×",
+        "Â": "",
+
+        # Ligatures
         "ﬁ": "fi",
         "ﬂ": "fl",
+        "Efﬁciency": "Efficiency",
+
+        # Common encoding variants
+        "â€“": "–",
+        "â€”": "—",
+        "â€™": "’",
+        "â€œ": "“",
+        "â€": "”",
     }
 
     for old, new in replacements.items():
         text = text.replace(old, new)
 
+    # Remove unnecessary trailing commas
     text = text.rstrip(",")
+
+    # Normalize repeated whitespace
+    text = " ".join(text.split())
 
     return text
 
 
 # ============================================================
-# 4. NORMALIZE ONE ROW
+# 5. NORMALIZE ONE ROW
 # ============================================================
 
 def normalize_row(row, models):
     """
     Normalize one table-parser row.
 
-    The table parser produces:
+    Expected input:
 
         {
             "parameter": "...",
             "values": {
-                "MODEL": "VALUE"
+                "SUN-5K-G06P3": "6.5"
             },
             "confidence": "...",
             "flags": [...]
@@ -79,12 +129,18 @@ def normalize_row(row, models):
         row.get("parameter", "")
     )
 
-    values = row.get("values", {})
+    values = row.get(
+        "values",
+        {}
+    )
 
     normalized_values = {
         model: None
         for model in models
     }
+
+    if not isinstance(values, dict):
+        return parameter, normalized_values
 
     for model, value in values.items():
 
@@ -98,7 +154,7 @@ def normalize_row(row, models):
 
 
 # ============================================================
-# 5. NORMALIZE COMPLETE TABLE
+# 6. NORMALIZE COMPLETE TABLE
 # ============================================================
 
 def normalize_table(table_data):
@@ -156,7 +212,10 @@ def normalize_table(table_data):
     # --------------------------------------------------------
 
     normalized_data = {
-        "source": table_data.get("source"),
+        "source": table_data.get(
+            "source",
+            SOURCE
+        ),
         "models": models,
         "parameters": parameters,
         "by_model": by_model
@@ -166,7 +225,7 @@ def normalize_table(table_data):
 
 
 # ============================================================
-# 6. PRINT SUMMARY
+# 7. PRINT SUMMARY
 # ============================================================
 
 def print_summary(data):
@@ -179,6 +238,10 @@ def print_summary(data):
     print("=" * 100)
     print("NORMALIZATION COMPLETE")
     print("=" * 100)
+
+    print(
+        f"Source: {data.get('source')}"
+    )
 
     print(
         f"Models: {len(models)}"
@@ -237,7 +300,7 @@ def print_summary(data):
 
 
 # ============================================================
-# 7. SAVE JSON
+# 8. SAVE JSON
 # ============================================================
 
 def save_json(data, path: Path):
@@ -261,41 +324,73 @@ def save_json(data, path: Path):
 
 
 # ============================================================
-# 8. MAIN
+# 9. MAIN
 # ============================================================
 
-if __name__ == "__main__":
+def main():
 
     print()
     print("=" * 100)
-    print("LOADING TABLE DATA")
+    print("NORMALIZE PARSER")
     print("=" * 100)
+
+    print(
+        f"Source: {SOURCE}"
+    )
+
+    print(
+        f"Input:  {INPUT_PATH}"
+    )
+
+    print(
+        f"Output: {OUTPUT_PATH}"
+    )
+
+    # --------------------------------------------------------
+    # Load
+    # --------------------------------------------------------
+
+    print()
+    print(
+        "Loading table data..."
+    )
 
     table_data = load_table_data(
         INPUT_PATH
     )
 
-    print(
-        f"Source: {table_data.get('source')}"
+    models = table_data.get(
+        "models",
+        []
+    )
+
+    rows = table_data.get(
+        "rows",
+        []
     )
 
     print(
-        f"Models found: {len(table_data['models'])}"
+        f"Models found: {len(models)}"
     )
 
-    for model in table_data["models"]:
+    for model in models:
 
         print(
             f"  - {model}"
         )
 
     print(
-        f"Rows found: {len(table_data['rows'])}"
+        f"Rows found: {len(rows)}"
     )
 
     # --------------------------------------------------------
     # Normalize
     # --------------------------------------------------------
+
+    print()
+    print(
+        "Normalizing..."
+    )
 
     normalized_data = normalize_table(
         table_data
@@ -311,7 +406,7 @@ if __name__ == "__main__":
     )
 
     # --------------------------------------------------------
-    # Print summary
+    # Summary
     # --------------------------------------------------------
 
     print_summary(
@@ -324,3 +419,11 @@ if __name__ == "__main__":
         f"Output saved to: {OUTPUT_PATH}"
     )
     print("=" * 100)
+
+
+# ============================================================
+# 10. ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+    main()
