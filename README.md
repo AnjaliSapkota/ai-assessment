@@ -25,6 +25,12 @@ Create a .env file  and set ``` GEMINI_API_KEY=<your key>``` in .env
 
 You can get free api key from Google AI Studio.
 
+
+The Gemini model name is set in `workflow/nodes.py`
+  (`get_gemini`); confirm it matches the model available on your API key
+  before running.
+
+
 ```bash
 uv sync
 uv run python main.py
