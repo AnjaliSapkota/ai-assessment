@@ -3,7 +3,7 @@ import json
 import sys
 
 
-# SOURCE CONFIGURATION
+# Source config
 
 VALID_SOURCES = {"source_1", "source_2"}
 
@@ -21,7 +21,7 @@ def _paths_for(source_id: str):
     return input_path, output_path
 
 
-# LOAD TABLE DATA
+# Load table data
 
 def load_table_data(path: Path):
     """Load output produced by table_parser.py."""
@@ -39,7 +39,7 @@ def load_table_data(path: Path):
         return json.load(f)
 
 
-# NORMALIZE TEXT
+#  Normalize text
 
 def normalize_text(text):
     """
@@ -86,7 +86,7 @@ def normalize_text(text):
     return text
 
 
-#  NORMALIZE ONE ROW
+# Normalize one row
 
 def normalize_row(row, models):
     """
@@ -163,7 +163,7 @@ def normalize_table(table_data, source_id):
 
     parameters = {}
 
-    # Process every row
+    #  Process every row
 
     for row in rows:
 
@@ -204,13 +204,18 @@ def normalize_table(table_data, source_id):
         ),
         "models": models,
         "parameters": parameters,
-        "by_model": by_model
+        "by_model": by_model,
+        # Passed straight through from table_parser.py. Not a
+        # per-model table row, so it doesn't belong in "parameters"
+        # / "by_model" -- but it still needs to reach the
+        # reconciliation prompt, which is fed this whole JSON blob.
+        "manufacturer": table_data.get("manufacturer"),
     }
 
     return normalized_data
 
 
-#  PRINT SUMMARY
+# PRINT SUMMARY
 
 def print_summary(data):
 
@@ -301,18 +306,8 @@ def save_json(data, path: Path):
         )
 
 
-# NORMALIZE ONE SOURCE (callable from main.py or the CLI)
-
+# NORMALIZE ONE SOURCE 
 def normalize_source(source_id: str, verbose: bool = True) -> Path:
-    """
-    Normalize data/tables/{source_id}_table.json into
-    data/normalized/{source_id}.json.
-
-    Returns the output path. This is the function main.py calls
-    for each source, so the whole pipeline can run in one command
-    instead of requiring two separate `uv run python
-    normalize_parser.py source_N` invocations by hand.
-    """
 
     input_path, output_path = _paths_for(source_id)
 
@@ -357,10 +352,13 @@ def normalize_source(source_id: str, verbose: bool = True) -> Path:
 # CLI ENTRY POINT
 
 def main():
+    """
+    Usage:
+        uv run python normalize_parser.py source_1
+        uv run python normalize_parser.py source_2
+
+    If no argument is given, source_1 is used.
+    """
 
     source_id = sys.argv[1] if len(sys.argv) > 1 else "source_1"
     normalize_source(source_id)
-
-
-# if __name__ == "__main__":
-#     main()

@@ -3,13 +3,15 @@ import re
 from pathlib import Path
 
 
-# CONFIGURATION
+# Configuration
+
 ROW_TOL = 3.0
 LABEL_MAX_X = 180.0
 MERGE_GAP = 10.0
 
 
-# LOAD EXTRACTED PDF DATA
+# load extracted pdf data
+
 def load_extracted_words(path: Path):
     """
     Load word-level data produced by pdf_extractor.py.
@@ -39,6 +41,8 @@ def load_extracted_words(path: Path):
 
     return pages
 
+
+# Find relevant table page containing the technical specification table
 
 EXPECTED_MODEL_COLUMNS = 8
 
@@ -81,8 +85,15 @@ def get_relevant_page(pages):
     return best_page
 
 
-# ROW CLUSTERING
+# Row clustering
+
 def cluster_rows(words, tolerance=ROW_TOL):
+    """
+    Group words that appear on the same visual row.
+
+    PDF text extraction does not necessarily preserve table rows,
+    so words are grouped using their vertical 'top' coordinate.
+    """
 
     words = sorted(
         words,
@@ -123,7 +134,7 @@ def cluster_rows(words, tolerance=ROW_TOL):
     return rows
 
 
-# FIND MODEL HEADER
+# Find model header
 
 def find_header(rows):
     """
@@ -227,19 +238,53 @@ def is_numeric_token(text):
 
 # MERGE WRAPPED TABLE ROWS
 
+def looks_like_continuation(value_words):
+
+    if not value_words:
+        return False
+
+    texts = [word["text"] for word in value_words]
+
+    if len(texts) > 8:
+        return True
+
+    numeric_like = sum(
+        1
+        for text in texts
+        if is_numeric_token(text)
+    )
+
+    return numeric_like < len(texts) / 2
+
+
 def merge_wrapped_rows(rows):
     """
-    Merge a label-only row followed by a value-only row.
+    Merge a wrapped field back into a single logical row.
 
-    Some PDF tables wrap long labels onto one visual line and
-    place the corresponding values on the next visual line.
+    Two distinct wrapping patterns show up in these datasheets:
 
-    Example:
+    1. A label-only row followed by a value-only row:
 
-        Long technical specification label
-                                      5  5  5  5 ...
+           Long technical specification label
+                                         5  5  5  5 ...
 
-    becomes one logical row.
+    2. A row that already has a label AND the start of a value,
+       where the value itself is too long to fit on one line and
+       spills onto one or more further value-only rows:
+
+           Grid Regulation   IEC 61727, IEC 62116, CEI 0-21, ...
+                              ..., OVE-Richtlinie R25, G99, VDE-AR-N 4105
+
+    Both become one logical row. Case 2 previously was not handled:
+    only a label-only row triggered a merge, so a field that already
+    had *some* value text on its first line silently lost every
+    later continuation line (or, depending on layout, kept only the
+    trailing fragment) -- producing truncated values and false
+    cross-source conflicts instead of a fuller, non-conflicting
+    picture. The loop below keeps absorbing follow-on rows as long
+    as they carry no label of their own and look like a text
+    continuation rather than a fresh per-model value row, which also
+    naturally handles a value wrapping across more than two lines.
     """
 
     merged = []
@@ -250,24 +295,11 @@ def merge_wrapped_rows(rows):
 
         row = rows[i]
 
-        label_words = [
-            word
-            for word in row
-            if word["x0"] < LABEL_MAX_X
-        ]
+        combined_row = list(row)
 
-        value_words = [
-            word
-            for word in row
-            if word["x0"] >= LABEL_MAX_X
-        ]
+        last_row = row
 
-        # Current row contains a label but no values.
-        if (
-            label_words
-            and not value_words
-            and i + 1 < len(rows)
-        ):
+        while i + 1 < len(rows):
 
             next_row = rows[i + 1]
 
@@ -283,40 +315,63 @@ def merge_wrapped_rows(rows):
                 if word["x0"] >= LABEL_MAX_X
             ]
 
-            # Following row contains values but no label.
-            if (
-                not next_label_words
-                and next_value_words
-                and (
-                    next_row[0]["top"] - row[0]["top"]
-                    <= MERGE_GAP
-                )
-            ):
+            # A continuation line never carries its own label, and
+            # it must actually have some value text to be worth
+            # absorbing.
+            if next_label_words or not next_value_words:
+                break
 
-                merged.append(
-                    row + next_row
-                )
+            gap = next_row[0]["top"] - last_row[0]["top"]
 
-                i += 2
+            if gap > MERGE_GAP:
+                break
 
-                continue
+            current_value_words = [
+                word
+                for word in combined_row
+                if word["x0"] >= LABEL_MAX_X
+            ]
 
-        merged.append(row)
+            current_label_words = [
+                word
+                for word in combined_row
+                if word["x0"] < LABEL_MAX_X
+            ]
+
+            # Case 1: label so far, no value yet at all.
+            is_label_only_so_far = (
+                bool(current_label_words)
+                and not current_value_words
+            )
+
+            # Case 2: we already have some value text, and the next
+            # line reads like more of the same wrapped text rather
+            # than a fresh, independent per-model value row.
+            is_text_continuation = (
+                bool(current_value_words)
+                and looks_like_continuation(next_value_words)
+            )
+
+            if not (is_label_only_so_far or is_text_continuation):
+                break
+
+            combined_row = combined_row + next_row
+
+            last_row = next_row
+
+            i += 1
+
+        merged.append(combined_row)
 
         i += 1
 
     return merged
 
 
-# LABEL GARBLING DETECTION
+# Detect possible PDF text-layer corruption like overlapping texts
+
 
 def detect_label_flags(label):
-    """
-    Detect possible PDF text-layer corruption.
-
-    Illustrator-generated PDFs can contain overlapping text runs
-    that become character-interleaved during extraction.
-    """
 
     flags = []
 
@@ -336,21 +391,6 @@ def detect_label_flags(label):
 # PARSE TABLE PAGE
 
 def parse_page(page):
-    """
-    Parse the technical specification table on one PDF page.
-
-    The parser does NOT assume fixed model x-coordinates.
-
-    Instead:
-
-        1. Find the 8 model headers.
-        2. Calculate their x-coordinate centers.
-        3. Cluster text into rows.
-        4. Separate labels from values.
-        5. Assign values to the nearest model column.
-        6. Flag incomplete/spanning rows.
-        7. Preserve raw values for later reconciliation.
-    """
 
     words = page["words"]
 
@@ -358,7 +398,7 @@ def parse_page(page):
 
     rows_raw = cluster_rows(words)
 
-    #  FIND MODEL HEADER
+    # FIND MODEL HEADER
 
     header_tokens = find_header(rows_raw)
 
@@ -371,11 +411,11 @@ def parse_page(page):
         for token in header_tokens
     )
 
-    #  MERGE WRAPPED LABEL ROWS
+    # MERGE WRAPPED LABEL ROWS
 
     rows = merge_wrapped_rows(rows_raw)
 
-    #  PARSE EACH TABLE ROW
+    # PARSE EACH TABLE ROW
 
     fields = []
 
@@ -397,17 +437,18 @@ def parse_page(page):
             continue
 
         # Ignore footer area
+
         if top > page["height"] - 40:
             continue
 
-        # Separate label and value zones
+        # Separate label and value zones\
         label_words = sorted(
             [
                 word
                 for word in row
                 if word["x0"] < LABEL_MAX_X
             ],
-            key=lambda word: word["x0"],
+            key=lambda word: (word["top"], word["x0"]),
         )
 
         value_words = sorted(
@@ -416,16 +457,18 @@ def parse_page(page):
                 for word in row
                 if word["x0"] >= LABEL_MAX_X
             ],
-            key=lambda word: word["x0"],
+            key=lambda word: (word["top"], word["x0"]),
         )
 
         # Build label
+
         label = " ".join(
             word["text"]
             for word in label_words
         ).strip()
 
         # Build value tokens
+
         value_tokens = [
             (
                 word["text"],
@@ -435,9 +478,11 @@ def parse_page(page):
         ]
 
         # Detect parsing problems
+
         flags = detect_label_flags(label)
 
         # No value found
+
         if not value_tokens:
 
             fields.append(
@@ -454,6 +499,7 @@ def parse_page(page):
             continue
 
         # Identify numeric/technical tokens
+
         numeric_tokens = [
             text
             for text, _ in value_tokens
@@ -461,6 +507,7 @@ def parse_page(page):
         ]
 
         # Determine whether row is columnar
+
         is_columnar = (
             len(value_tokens) >= 2
             and len(value_tokens) <= 8
@@ -468,6 +515,7 @@ def parse_page(page):
         )
 
         # COLUMNAR VALUES
+
         if is_columnar:
 
             per_model = {}
@@ -482,6 +530,7 @@ def parse_page(page):
                 )
 
                 # Detect two values assigned to same column
+
                 if column_index in used_columns:
 
                     flags.append(
@@ -501,11 +550,13 @@ def parse_page(page):
                 }
 
             # Full 8-column row
+
             if len(value_tokens) == 8:
 
                 confidence = "per_model_columnar"
 
             # Partial / spanning row
+
             else:
 
                 confidence = "spanning_or_partial"
@@ -529,6 +580,7 @@ def parse_page(page):
             )
 
         # SHARED VALUE
+
         else:
 
             shared_text = " ".join(
@@ -556,13 +608,123 @@ def parse_page(page):
             )
 
     # RETURN PARSED TABLE
+
     return {
         "model_columns": model_names,
         "fields": fields,
     }
 
 
+# MANUFACTURER IDENTITY 
+
+# get_relevant_page() picks exactly one page -- the one that scores
+# best as a spec-*table* page -- and parse_page() only ever looks at
+# words inside that table's row/column structure. Manufacturer name
+# and address in this document family live in ordinary page-footer
+# text, not in a labeled table row, so that pipeline structurally
+# never sees them: it isn't that the value gets extracted and then
+# lost, it's never in scope to extract at all. This is a separate,
+# independent pass over every page's free text.
+
+MANUFACTURER_NAME_PATTERN = re.compile(
+    r"([A-Z][A-Za-z0-9&,.\-\s]{0,80}?\bCo\.,?\s*Ltd\.?)"
+)
+
+ADDRESS_HINT_PATTERN = re.compile(
+    r"(Road|Street|Ave|District|Zhejiang|China|No\.\s*\d+)",
+    re.IGNORECASE,
+)
+
+
+def _page_lines(page):
+    """
+    Reconstruct simple top-to-bottom, left-to-right text lines for
+    a page, independent of any table/column structure. This is what
+    lets us search ordinary prose (titles, footers, boilerplate)
+    that the table-row parser above never looks at.
+    """
+
+    rows = cluster_rows(page["words"])
+
+    lines = []
+
+    for row in rows:
+
+        row_sorted = sorted(
+            row,
+            key=lambda word: word["x0"],
+        )
+
+        lines.append(
+            {
+                "text": " ".join(
+                    word["text"]
+                    for word in row_sorted
+                ),
+                "top": min(
+                    word["top"]
+                    for word in row
+                ),
+            }
+        )
+
+    return lines
+
+
+def extract_manufacturer_info(pages):
+    """
+    Find manufacturer legal name / address by scanning the free
+    text of EVERY page, not just the spec-table page.
+
+    Deliberately independent of get_relevant_page() and the
+    table-row pipeline above -- see module note. Returns a dict
+    describing what was found (and where), or an explicit
+    found=False so callers can say "pending" honestly instead of
+    silently omitting the field.
+    """
+
+    for page in pages:
+
+        for index, line in enumerate(_page_lines(page)):
+
+            match = MANUFACTURER_NAME_PATTERN.search(
+                line["text"]
+            )
+
+            if not match:
+                continue
+
+            name = match.group(1).strip()
+
+            context_lines = _page_lines(page)[index: index + 3]
+
+            address_parts = [
+                context_line["text"].strip()
+                for context_line in context_lines
+                if ADDRESS_HINT_PATTERN.search(context_line["text"])
+            ]
+
+            return {
+                "found": True,
+                "name": name,
+                "address": " ".join(address_parts) if address_parts else None,
+                "source_page": page.get("page"),
+                "raw_line": line["text"].strip(),
+                "extraction_method": "footer_free_text_regex",
+            }
+
+    return {
+        "found": False,
+        "name": None,
+        "address": None,
+        "source_page": None,
+        "raw_line": None,
+        "extraction_method": "footer_free_text_regex",
+    }
+
+
 # PARSE EXTRACTED PDF JSON
+
 def parse_pdf(
     extracted_path: Path,
     output_path: Path,
@@ -584,16 +746,24 @@ def parse_pdf(
     )
 
     # Find table page automatically
+
     page = get_relevant_page(
         pages
     )
 
     # Parse table
+
     result = parse_page(
         page
     )
 
+    # Manufacturer identity -- searched across ALL pages, since
+    # it is not part of the table region parse_page() looked at.
+
+    result["manufacturer"] = extract_manufacturer_info(pages)
+
     # Add source metadata
+
     result["source_path"] = str(
         extracted_path
     )
@@ -601,6 +771,7 @@ def parse_pdf(
     result["page"] = page["page"]
 
     # Save output
+
     output_path.parent.mkdir(
         parents=True,
         exist_ok=True,

@@ -4,40 +4,42 @@ import re
 
 
 # Paths
-BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = Path("data")
 
-INPUT_DIR = BASE_DIR / "data" / "parsed"
-OUTPUT_DIR = BASE_DIR / "data" / "tables"
+INPUT_DIR = Path("data") / "parsed"
+OUTPUT_DIR = Path("data") / "tables"
 
 
-# General settings
+# GGeneral settings
+
 MODEL_PATTERN = re.compile(
     r"^SUN-(?:4|5|6|7|8|10|12|15)K-G06P3$"
 )
 
 
-# Load/save
-def load_json(path: Path):
+#load/save
 
+def load_json(path: Path):
+ 
     if not path.exists():
         raise FileNotFoundError(
             f"Input file not found:\n{path}"
         )
-
+ 
     with path.open(
         "r",
         encoding="utf-8",
     ) as f:
         return json.load(f)
-
-
+ 
+ 
 def save_json(path: Path, data):
-
+ 
     path.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
-
+ 
     with path.open(
         "w",
         encoding="utf-8",
@@ -48,8 +50,11 @@ def save_json(path: Path, data):
             indent=2,
             ensure_ascii=False,
         )
+ 
+
 
 # Text normalization
+
 def normalize_text(value):
 
     if value is None:
@@ -89,6 +94,7 @@ def normalize_parameter(parameter):
 
 
 # model normalization
+
 def normalize_model_key(key):
 
     if not isinstance(key, str):
@@ -143,7 +149,7 @@ def is_model_key(key):
     )
 
 
-# Row extraction
+# row extraction
 def extract_rows(parsed_data):
 
     if isinstance(parsed_data, list):
@@ -193,6 +199,7 @@ def extract_rows(parsed_data):
 
 
 # Row normalization
+
 def normalize_row(row):
 
     if not isinstance(row, dict):
@@ -283,6 +290,7 @@ def normalize_row(row):
         values = converted
 
     # MAKE SURE VALUES ARE A DICT
+
     if not isinstance(values, dict):
         values = {}
 
@@ -326,7 +334,8 @@ def normalize_row(row):
     }
 
 
-# noise detection
+# NOISE DETECTION
+
 def is_noise_row(row):
 
     parameter = row["parameter"].strip()
@@ -374,7 +383,8 @@ def remove_noise_rows(rows):
     ]
 
 
-# merge parameterless rows
+# MERGE PARAMETERLESS ROWS
+
 def merge_parameterless_value_rows(rows):
 
     result = []
@@ -394,25 +404,42 @@ def merge_parameterless_value_rows(rows):
 
         previous = result[-1]
 
-        # Only merge when previous row has no values.
-        if (
-            previous["parameter"]
-            and not previous["values"]
-        ):
+        if not previous["parameter"]:
+            # No real field to attach this continuation to.
+            continue
 
-            previous["values"] = row["values"]
+        merged_any = False
 
-            if row["type"]:
-                previous["type"] = row["type"]
+        for model, value in row["values"].items():
 
-            if row["confidence"]:
-                previous["confidence"] = (
-                    row["confidence"]
-                )
+            if not value:
+                continue
 
-            previous["flags"].extend(
-                row["flags"]
-            )
+            existing = previous["values"].get(model)
+
+            if not existing:
+                previous["values"][model] = value
+
+            elif value not in existing:
+                previous["values"][model] = f"{existing} {value}"
+
+            merged_any = True
+
+        if not merged_any:
+            continue
+
+        if row["type"]:
+            previous["type"] = row["type"]
+
+        previous["confidence"] = "merged_wrapped_continuation"
+
+        previous["flags"].append(
+            "merged_wrapped_value_continuation_row_level"
+        )
+
+        previous["flags"].extend(
+            row["flags"]
+        )
 
     return result
 
@@ -671,7 +698,7 @@ def build_table(parsed_data, source_id):
             "No table rows found."
         )
 
-    # 1. Normalize
+    # Normalize
     rows = []
 
     for raw_row in raw_rows:
@@ -683,33 +710,33 @@ def build_table(parsed_data, source_id):
         if row is not None:
             rows.append(row)
 
-    # 2. Remove obvious noise
+    # Remove obvious noise
     rows = remove_noise_rows(
         rows
     )
 
-    # 3. Merge wrapped labels
+    # Merge wrapped labels
     rows = merge_mpp_tracker_parameter(
         rows
     )
 
-    # 4. Handle parameterless continuation rows
+    # Handle parameterless continuation rows
     rows = merge_parameterless_value_rows(
         rows
     )
 
-    # 5. Detect possible group spans
+    # Detect possible group spans
     rows = [
         detect_group_span(row)
         for row in rows
     ]
 
-    # 6. Remove duplicates
+    # Remove duplicates
     rows = remove_duplicate_rows(
         rows
     )
 
-    # 7. Sort by PDF position
+    # Sort by PDF position
     rows = sort_rows(
         rows
     )
@@ -718,10 +745,17 @@ def build_table(parsed_data, source_id):
         parsed_data
     )
 
+    manufacturer = (
+        parsed_data.get("manufacturer")
+        if isinstance(parsed_data, dict)
+        else None
+    )
+
     return {
         "source": source_id,
         "models": models,
         "rows": rows,
+        "manufacturer": manufacturer,
     }
 
 
@@ -911,6 +945,3 @@ def main():
     parse_source("source_1")
     parse_source("source_2")
 
-
-# if __name__ == "__main__":
-#     main()

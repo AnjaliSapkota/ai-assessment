@@ -5,10 +5,11 @@ from ai_assessment.config import (SOURCE_DOCUMENTS, RAW_DATA_DIR, EXTRACTED_DATA
 from ai_assessment.downloader import download_pdf
 from ai_assessment.pdf_extractor import extract_pdf
 from ai_assessment.layout_parser import parse_pdf
+from ai_assessment.layout_parser import parse_pdf
+from ai_assessment.table_parser import parse_source as parse_table
+from ai_assessment.normalize_parser import normalize_source
+from ai_assessment.validator import validate_source
 
-from table_parser import parse_source as parse_table
-from normalize_parser import normalize_source
-from validator import validate_source
 
 from workflow.graph import build_graph
 

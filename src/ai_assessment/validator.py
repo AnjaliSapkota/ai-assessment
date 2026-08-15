@@ -225,12 +225,3 @@ def validate_source(source_id: str, verbose: bool = True):
 
     return errors, warnings
 
-
-# CLI ENTRY POINT
-
-if __name__ == "__main__":
-
-    import sys
-
-    source_id = sys.argv[1] if len(sys.argv) > 1 else "source_1"
-    validate_source(source_id)
