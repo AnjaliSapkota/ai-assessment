@@ -137,6 +137,31 @@ PARSED_DATA_DIR = Path("data/parsed")
 
 
 
+import json
+from pathlib import Path
+
+from workflow.graph import build_graph
+
+
+# ============================================================
+# PATHS
+# ============================================================
+
+OUTPUT_DIR = Path("data/output")
+
+RECONCILIATION_PATH = (
+    OUTPUT_DIR / "reconciliation.json"
+)
+
+REPORT_PATH = (
+    OUTPUT_DIR / "compliance_draft.md"
+)
+
+
+# ============================================================
+# MAIN WORKFLOW
+# ============================================================
+
 def main():
 
     print("=" * 80)
@@ -144,7 +169,23 @@ def main():
     print("SunBridge Trading — China → Nepal")
     print("=" * 80)
 
+    # --------------------------------------------------------
+    # Build LangGraph workflow
+    # --------------------------------------------------------
+
     graph = build_graph()
+
+    # --------------------------------------------------------
+    # Initial state
+    #
+    # The actual data is loaded by the first LangGraph node
+    # from:
+    #
+    # data/normalized/source_1.json
+    # data/normalized/source_2.json
+    #
+    # The PDF paths are retained as metadata/reference only.
+    # --------------------------------------------------------
 
     initial_state = {
         "source_1_pdf": "data/raw/source_1.pdf",
@@ -152,31 +193,42 @@ def main():
         "errors": [],
     }
 
-    print("\n[1/3] Loading normalized structured data...")
+    # --------------------------------------------------------
+    # Run workflow
+    # --------------------------------------------------------
+
+    print(
+        "\n[1/3] Loading normalized structured data..."
+    )
 
     result = graph.invoke(initial_state)
 
-    print("[2/3] Reconciling documents with Gemini...")
-    print("[3/3] Generating compliance draft...")
+    print(
+        "[2/3] Reconciling documents with Gemini..."
+    )
 
-    output_dir = Path("data/output")
-    output_dir.mkdir(
+    print(
+        "[3/3] Generating compliance draft..."
+    )
+
+    # --------------------------------------------------------
+    # Create output directory
+    # --------------------------------------------------------
+
+    OUTPUT_DIR.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    reconciliation_path = (
-        output_dir / "reconciliation.json"
-    )
+    # --------------------------------------------------------
+    # Save reconciliation JSON
+    # --------------------------------------------------------
 
-    report_path = (
-        output_dir / "compliance_draft.md"
-    )
-
-    with reconciliation_path.open(
+    with RECONCILIATION_PATH.open(
         "w",
         encoding="utf-8",
     ) as f:
+
         json.dump(
             result["reconciliation"],
             f,
@@ -184,16 +236,41 @@ def main():
             ensure_ascii=False,
         )
 
-    with report_path.open(
+    # --------------------------------------------------------
+    # Save compliance report
+    # --------------------------------------------------------
+
+    with REPORT_PATH.open(
         "w",
         encoding="utf-8",
     ) as f:
-        f.write(result["report"])
 
-    print("\nDone.")
-    print(f"Reconciliation: {reconciliation_path}")
-    print(f"Report:         {report_path}")
+        f.write(
+            result["report"]
+        )
 
+    # --------------------------------------------------------
+    # Final status
+    # --------------------------------------------------------
+
+    print("\n" + "=" * 80)
+    print("TASK 1 COMPLETE")
+    print("=" * 80)
+
+    print(
+        f"Reconciliation: {RECONCILIATION_PATH}"
+    )
+
+    print(
+        f"Report:         {REPORT_PATH}"
+    )
+
+    print("=" * 80)
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
 
 if __name__ == "__main__":
     main()

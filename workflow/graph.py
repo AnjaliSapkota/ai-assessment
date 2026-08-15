@@ -10,9 +10,27 @@ from workflow.nodes import (
 
 
 def build_graph():
-    """Build the assessment LangGraph workflow."""
+    """
+    Build the Task 1 assessment workflow.
+
+    Workflow:
+
+        START
+          ↓
+    load_normalized_data
+          ↓
+    reconcile_documents
+          ↓
+      generate_report
+          ↓
+         END
+    """
 
     graph = StateGraph(AssessmentState)
+
+    # --------------------------------------------------------
+    # Nodes
+    # --------------------------------------------------------
 
     graph.add_node(
         "load_data",
@@ -28,6 +46,10 @@ def build_graph():
         "generate_report",
         generate_report,
     )
+
+    # --------------------------------------------------------
+    # Edges
+    # --------------------------------------------------------
 
     graph.add_edge(
         START,
@@ -48,5 +70,9 @@ def build_graph():
         "generate_report",
         END,
     )
+
+    # --------------------------------------------------------
+    # Compile
+    # --------------------------------------------------------
 
     return graph.compile()
