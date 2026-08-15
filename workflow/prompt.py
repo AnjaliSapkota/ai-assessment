@@ -1,18 +1,18 @@
 """
-Prompt templates for the Cantordust Task 1 assessment workflow.
+Prompt templates used by the assessment workflow.
 
-The prompts are kept separate from workflow node logic so they can be
-revised and tested independently.
+Prompts are kept separate from workflow node logic so they can be
+updated and tested independently.
 """
 
 
 # ============================================================
-# 1. DOCUMENT RECONCILIATION PROMPT
+# DOCUMENT RECONCILIATION
 # ============================================================
 
 RECONCILIATION_PROMPT = """
-You are reviewing two manufacturer datasheets for a solar PV inverter
-as part of an import-document assessment.
+You are performing a structured reconciliation of two manufacturer
+datasheets for a solar PV inverter.
 
 Company:
 SunBridge Trading, Kathmandu
@@ -20,153 +20,152 @@ SunBridge Trading, Kathmandu
 Target product:
 SUN-5K-G06P3
 
-Two normalized manufacturer datasheets are provided below.
+The two normalized source documents are provided at the end of this
+prompt.
 
-Your task is to compare the two sources and reconcile information for
-the TARGET MODEL ONLY.
-
-The normalized data may contain multiple inverter models. Never use a
-value belonging to another model as the value of SUN-5K-G06P3.
-
+Your task is to compare ONLY information that can be associated with
+SUN-5K-G06P3.
 
 ============================================================
 EVIDENCE RULES
 ============================================================
 
-Use only the information contained in Source 1 and Source 2.
+Use ONLY the information contained in Source 1 and Source 2.
 
 Do not:
 
-- search the internet
+- use internet searches
 - use outside technical knowledge
 - invent values
-- estimate missing values
+- estimate values
 - calculate values
-- infer values from another model
-- silently repair corrupted extraction
-- assume two different technical terms mean the same thing
+- copy a value from another inverter model
+- assume a value belongs to SUN-5K-G06P3 merely because it appears
+  elsewhere in a table
+- silently correct corrupted extraction
+- treat a standard listing as proof of certification
 
-If a SUN-5K-G06P3 value is unavailable, preserve it as null or mark
-the field as uncertain.
+If a value for SUN-5K-G06P3 is not established, keep it null and
+describe the uncertainty where appropriate.
 
-If another model has a value but SUN-5K-G06P3 does not, do not copy
+If another model has a value but SUN-5K-G06P3 does not, do NOT copy
 that value to the target model.
 
-Preserve original wording, numbers, and units whenever possible.
-
-
-============================================================
-COMPARISON LOGIC
-============================================================
-
-For every meaningful technical field found in either source, compare
-the values associated specifically with SUN-5K-G06P3.
-
-Use exactly one of these statuses:
-
-"agreement"
-    Both sources contain substantively equivalent information.
-
-"conflict"
-    Both sources contain information for the same field but the
-    information differs in a technically meaningful way.
-
-"source_1_only"
-    A target-model value is available only in Source 1.
-
-"source_2_only"
-    A target-model value is available only in Source 2.
-
-"uncertain"
-    The value is missing, corrupted, ambiguous, or cannot reliably
-    be associated with SUN-5K-G06P3.
-
+Preserve the original source wording and units whenever possible.
 
 ============================================================
-IMPORTANT DISTINCTIONS
+TARGET MODEL RULE
 ============================================================
 
-Do not turn simple presentation differences into technical conflicts.
-
-Examples of presentation differences include:
-
-- IP65 versus IP 65
-- 4000 versus 4000m
-- capitalization differences
-- spacing differences
-- punctuation differences
-- equivalent formatting of the same value
-
-Preserve the original source representation even when the status is
-agreement.
-
-However, genuine technical differences must remain visible.
-
-Examples:
-
-- kW versus kVA
-- different efficiency percentages
-- different cooling descriptions
-- different grid standards
-- different frequency ranges
-- different protection specifications
-- "Transformerless" versus "Non-Isolated"
-
-Do not automatically declare two different technical terms equivalent.
-
-
-============================================================
-SOURCE TRACEABILITY
-============================================================
-
-For important values, provide a short note identifying how the value
-appears in the corresponding source.
-
-If a label is corrupted or garbled, preserve the original corrupted
-text and describe it as an extraction issue.
-
-Do not guess what a corrupted label means.
-
-A standard or regulation listed in a datasheet is not automatically
-evidence that the product has been certified.
-
-Only report certification evidence when the supplied source data
-explicitly contains certification information.
-
-
-============================================================
-TARGET MODEL
-============================================================
-
-The only product being evaluated is:
+The ONLY product being reconciled is:
 
 SUN-5K-G06P3
 
-Other models may be mentioned only when useful for explaining an
-extraction or model-specific missing-data issue.
+Other model names may appear in the source data. They may be mentioned
+only when necessary to explain why a target-model value is missing or
+uncertain.
 
-Do not substitute values from:
-
-- SUN-4K-G06P3
-- SUN-6K-G06P3
-- SUN-7K-G06P3
-- SUN-8K-G06P3
-- SUN-10K-G06P3
-- SUN-12K-G06P3
-- SUN-15K-G06P3
-
-or any other model.
-
+Never substitute another model's value for SUN-5K-G06P3.
 
 ============================================================
-OUTPUT REQUIREMENTS
+COMPARISON STATUS
+============================================================
+
+For each important field, use exactly one of these statuses:
+
+"agreement"
+    Both sources provide substantively equivalent information.
+
+"conflict"
+    Both sources provide information for the target model, but the
+    information differs in a technically meaningful way.
+
+"source_1_only"
+    The target-model information is available only in Source 1.
+
+"source_2_only"
+    The target-model information is available only in Source 2.
+
+"uncertain"
+    The information is missing, corrupted, ambiguous, or cannot be
+    reliably associated with the target model.
+
+Do not classify simple formatting differences as conflicts.
+
+For example:
+
+- IP65 and IP 65 are equivalent presentation.
+- Three Phase and 3 may represent the same phase configuration.
+- WiFi and WIFI are presentation differences.
+- spacing differences should not create conflicts.
+
+However, preserve genuine technical differences.
+
+For example:
+
+- kW and kVA are different units.
+- different efficiency values are differences.
+- different cooling descriptions must remain different.
+- different topology descriptions must remain different unless the
+  source data explicitly establishes equivalence.
+- different grid standards must remain different.
+- different protection or monitoring descriptions must remain distinct
+  unless equivalence is explicitly established.
+
+============================================================
+CERTIFICATION RULE
+============================================================
+
+A standard appearing in a datasheet does NOT automatically prove that
+the product is certified.
+
+Only record certification evidence when the supplied source data
+explicitly provides certification information.
+
+If a standard is listed but no certificate or explicit certification
+evidence is supplied, report the standard as a listed standard, not as
+confirmed certification.
+
+============================================================
+CORRUPTED DATA
+============================================================
+
+If a field or label appears corrupted or garbled:
+
+- preserve the extracted text
+- mark the value as uncertain
+- describe the extraction problem
+- do not guess the intended value
+
+============================================================
+CONFIDENCE
+============================================================
+
+Use:
+
+"high"
+
+when the value is clearly and directly associated with
+SUN-5K-G06P3.
+
+Use:
+
+"low"
+
+when the value is missing, ambiguous, corrupted, incomplete, or
+affected by uncertain model association.
+
+============================================================
+OUTPUT FORMAT
 ============================================================
 
 Return ONLY valid JSON.
 
 Do not return Markdown.
-Do not use JSON code fences.
-Do not write explanations before or after the JSON.
+
+Do not use code fences.
+
+Do not add explanatory text before or after the JSON.
 
 Use exactly this structure:
 
@@ -179,7 +178,6 @@ Use exactly this structure:
       "variant": "",
       "observations": []
     }},
-
     "source_2": {{
       "models": [],
       "variant": "",
@@ -212,282 +210,427 @@ Use exactly this structure:
   "important_observations": []
 }}
 
-
 ============================================================
-CONFIDENCE
-============================================================
-
-Use:
-
-"high"
-
-when the value is clearly and directly associated with
-SUN-5K-G06P3 in the normalized data.
-
-Use:
-
-"low"
-
-when the value is missing, partial, corrupted, ambiguous, or affected
-by extraction uncertainty.
-
-
-============================================================
-QUALITY CONTROL
+QUALITY CHECK
 ============================================================
 
-Before returning the JSON, check all of the following:
+Before returning the JSON, verify:
 
-1. Every technical value belongs specifically to SUN-5K-G06P3.
-
-2. No value has been copied from another model.
-
-3. Missing target-model values remain missing.
-
+1. Only SUN-5K-G06P3 values are used.
+2. No value was copied from another model.
+3. Missing values remain missing.
 4. Original units are preserved.
-
 5. kW and kVA are not treated as equivalent.
-
 6. Genuine technical differences remain visible.
-
-7. Formatting-only differences are not incorrectly reported as
-   technical conflicts.
-
-8. Corrupted labels are reported as extraction issues.
-
-9. Standards are not presented as certification evidence unless
-   certification evidence is explicitly present.
-
-10. Source-specific information is correctly classified.
-
-11. The response is valid JSON.
-
-12. Do not add fields that are unsupported by the normalized data.
-
+7. Formatting-only differences are not marked as conflicts.
+8. Corrupted labels are reported as uncertain.
+9. Standards are not presented as certification evidence.
+10. Source-specific information remains source-specific.
+11. The output is valid JSON.
+12. No Markdown or explanatory text is returned.
 
 ============================================================
-SOURCE 1 NORMALIZED DATA
+SOURCE 1
 ============================================================
 
 {source_1}
 
-
 ============================================================
-SOURCE 2 NORMALIZED DATA
+SOURCE 2
 ============================================================
 
 {source_2}
 
-
 ============================================================
-END OF INPUT
+END OF SOURCE DATA
 ============================================================
 """
 
 
 # ============================================================
-# 2. REPORT GENERATION PROMPT
+# REPORT GENERATION
 # ============================================================
 
 REPORT_GENERATION_PROMPT = """
-Prepare a professional draft import-document assessment for:
-
-SunBridge Trading, Kathmandu
+You are preparing a professional draft import-document assessment for
+SunBridge Trading, Kathmandu.
 
 Target product:
-
 SUN-5K-G06P3
 
-The report must be generated ONLY from the reconciliation data
-provided below.
-
+Your report must be generated exclusively from the reconciliation data
+provided at the end of this prompt.
 
 ============================================================
-REPORTING RULES
+SOURCE DISCIPLINE
 ============================================================
 
-Use only the reconciliation data.
+Use only the supplied reconciliation data.
 
-Do not:
+You must NOT:
 
 - use outside knowledge
 - search the internet
 - invent information
-- calculate missing values
-- fill missing values using another inverter model
-- silently choose one source when two sources disagree
-- change the original source values
-- claim facts that are not present in the reconciliation
+- estimate missing values
+- calculate new values
+- fill a missing target-model value using another inverter model
+- silently correct corrupted extraction
+- silently choose Source 1 over Source 2 when they disagree
 
-When information cannot be established, write:
+The report must remain evidence-based.
+
+If the reconciliation does not establish a value, write exactly:
 
 "Not established from the supplied documents."
 
-Keep Source 1 and Source 2 values visible when they differ.
+Keep Source 1 and Source 2 values separate whenever they differ.
 
-Preserve the original units.
+Preserve the original units and wording where relevant.
 
-Do not treat kW and kVA as interchangeable.
+In particular:
 
-Do not automatically treat different technical terminology as
-equivalent.
+- kW and kVA are different units and must remain distinct.
+- Do not convert one into the other.
+- Do not remove units from conflicting values.
+- Do not turn different technical terminology into confirmed equivalence.
+- Do not interpret corrupted labels by guessing their intended meaning.
 
-Formatting differences such as capitalization, spacing, punctuation,
-or presentation should not be described as substantive technical
-conflicts.
+A standard, regulation, or standard number appearing in a datasheet
+does not by itself prove certification.
 
-Corrupted or garbled labels must be described as extraction issues.
-Do not guess their intended meaning.
+Only describe certification as established when the reconciliation
+contains explicit certification evidence.
 
-A standard listed in a datasheet does not by itself establish
-certification.
+If explicit certification evidence is absent, write:
 
-If certification evidence is not explicitly present, state that
-certification evidence is not established from the supplied
-documents.
-
-The final document is a DRAFT. Do not present it as a final legal,
-customs, engineering, or regulatory determination.
-
+"Certification evidence is not established from the supplied documents."
 
 ============================================================
-REPORT STRUCTURE
+COMPARISON INTERPRETATION
 ============================================================
 
-Create clean professional Markdown using exactly these sections:
+Use the reconciliation status as the basis for describing differences.
 
+The report should distinguish between:
+
+1. agreement
+2. substantive technical conflict
+3. source-specific information
+4. missing or uncertain information
+5. presentation-only differences
+
+Do NOT describe differences in capitalization, spacing, punctuation,
+or equivalent formatting as technical conflicts.
+
+Examples of presentation differences include:
+
+- IP65 vs IP 65
+- Three Phase vs 3
+- WiFi vs WIFI
+- minor spacing differences in units or labels
+
+However, preserve genuine technical differences.
+
+For example:
+
+- 5.5 kW vs 5.5 kVA must remain a conflict.
+- 97.5% vs 97.6% must remain visible as a difference.
+- Different cooling descriptions must remain different unless the
+  reconciliation explicitly establishes equivalence.
+- Different topology terminology must not automatically be treated
+  as equivalent.
+- Different protection or monitoring terminology must not automatically
+  be treated as equivalent.
+
+If the reconciliation marks two fields as different terminology but does
+not establish technical equivalence, describe them carefully without
+claiming that they represent the same function.
+
+============================================================
+MARKDOWN OUTPUT REQUIREMENTS
+============================================================
+
+Return clean, normal Markdown.
+
+Do NOT bold headings.
+
+Correct:
 
 # SunBridge Trading — Import Compliance Draft
 
 ## 1. Executive summary
 
-Summarize:
+Incorrect:
+
+**# SunBridge Trading — Import Compliance Draft**
+
+Do NOT escape Markdown unnecessarily.
+
+Use normal Markdown bullets.
+
+Correct:
+
+- **Target Product:** SUN-5K-G06P3
+- **Overall Consistency:** Substantial agreement with several discrepancies.
+
+Incorrect:
+
+\\* \\*\\*Target Product:\\*\\*
+
+Do not place the entire report inside a code block.
+
+Do not add ```markdown or ``` around the report.
+
+Use standard Markdown tables.
+
+Every table must have a header row and separator row.
+
+Example:
+
+| Parameter | Source 1 | Source 2 | Status |
+|---|---|---|---|
+| Rated Output Power | 5 kW | 5 kW | agreement |
+| Max. Active / Apparent Power | 5.5 kW | 5.5 kVA | conflict |
+
+Preserve units exactly when supplied by the reconciliation.
+
+============================================================
+REPORT STRUCTURE
+============================================================
+
+Create the report using exactly these ten sections.
+
+# SunBridge Trading — Import Compliance Draft
+
+## 1. Executive summary
+
+Provide a concise overview covering:
 
 - target product
-- overall consistency between the two sources
-- important agreements
-- important conflicts
+- overall consistency between Source 1 and Source 2
+- major agreements
+- major substantive conflicts
 - important missing or uncertain information
 - whether manufacturer clarification is required
 
-Do not make a final compliance or customs-clearance decision.
+Do not exaggerate consistency.
 
+If multiple substantive discrepancies exist, use wording such as:
+
+"Source 1 and Source 2 show substantial agreement on several core
+parameters, but substantive discrepancies and source-specific
+information require clarification."
+
+Only use this type of wording when supported by the reconciliation.
+
+Do not make a final legal, customs, engineering, regulatory, or
+product-clearance decision.
 
 ## 2. Product identification
 
-Include:
+Report:
 
 - Model
 - Product type, if established
 - Manufacturer, if established
 
-If unavailable, write:
+For unavailable information use:
 
 "Not established from the supplied documents."
 
+Do not infer the manufacturer from outside knowledge.
 
 ## 3. Manufacturer / document observations
 
-Summarize relevant observations about Source 1 and Source 2.
+Summarize only observations supported by the reconciliation.
 
-Include useful information such as:
+Include relevant information about:
 
-- model coverage
-- document variant
+- models covered by each source
+- document or variant information
+- manufacturer information
+- source-specific fields
 - extraction problems
 - model-specific missing values
-- other important document-level observations
 
-Do not invent manufacturer information.
+Do not interpret corrupted labels.
 
+Do not add information that is not present in the reconciliation.
 
 ## 4. Technical specifications for SUN-5K-G06P3
 
-Create a Markdown table using:
+Create a Markdown table using exactly these columns:
 
 | Parameter | Source 1 | Source 2 | Status |
-| :--- | :--- | :--- | :--- |
+|---|---|---|---|
 
-Include important technical fields found in the reconciliation.
+Include the important technical fields relevant to the target model.
 
-Preserve original values and units.
+Prioritize fields such as:
 
-For unavailable information, write:
-
-"Not established from the supplied documents."
-
-
-## 5. Cross-document comparison
-
-Explain the most important substantive differences.
-
-Useful categories include:
-
-- electrical ratings
-- power units
+- DC input specifications
+- AC output specifications
 - voltage
 - frequency
-- phase
+- current
+- power factor
+- harmonic distortion
 - efficiency
 - protection
 - topology
 - cooling
-- grid standards
-- other technical terminology
+- environmental ratings
+- physical dimensions
+- weight
+- altitude
+- standards
+- interfaces
+- other important technical specifications
 
-Do not hide or silently resolve conflicts.
+Do not create values that are not present in the reconciliation.
 
-Do not turn formatting-only differences into technical conflicts.
+For unavailable values, write:
 
+"Not established from the supplied documents."
+
+Preserve units.
+
+For example:
+
+Source 1:
+"5.5 kW"
+
+Source 2:
+"5.5 kVA"
+
+must remain:
+
+| Max. Active / Apparent Power | 5.5 kW | 5.5 kVA | conflict |
+
+Do NOT reduce these values to:
+
+| Max. Active / Apparent Power | 5.5 | 5.5 | conflict |
+
+Do not combine separate technical concepts merely to shorten the table.
+
+## 5. Cross-document comparison
+
+Explain the most important differences between Source 1 and Source 2.
+
+Organize the discussion where useful under categories such as:
+
+- Electrical ratings
+- Voltage and frequency
+- Efficiency
+- Topology
+- Cooling
+- Protection and monitoring
+- Grid standards
+- Other technical terminology
+
+Clearly distinguish:
+
+### Technical conflicts
+
+Differences that are explicitly identified as technically meaningful
+by the reconciliation.
+
+### Source-specific information
+
+Information available from only one source.
+
+### Missing or uncertain information
+
+Information that cannot be established for SUN-5K-G06P3.
+
+### Presentation differences
+
+Formatting-only differences that do not represent substantive conflicts.
+
+Do not turn formatting differences into technical discrepancies.
+
+Do not claim equivalence between differently named protection,
+monitoring, topology, or cooling functions unless the reconciliation
+explicitly establishes that equivalence.
 
 ## 6. Testing and standards evidence
 
-Report only standards and evidence contained in the reconciliation.
+Report only standards, regulations, testing information, or certification
+evidence actually present in the reconciliation.
 
-Clearly distinguish between:
+Separate:
 
-- standards listed in the datasheets
-- actual certification evidence
+- standards or regulations listed in the datasheets
+- explicit certification evidence
 
-Do not claim certification without explicit evidence.
+Do not state that the product is certified merely because a standard
+appears in a datasheet.
 
-If standards are listed but certification evidence is absent, state:
+If certification evidence is absent, state:
 
 "Certification evidence is not established from the supplied documents."
 
+Do not invent certificate numbers, laboratories, dates, or test reports.
 
 ## 7. Labeling / nameplate information
 
-Report actual labeling or nameplate information contained in the
+Report only actual labeling or nameplate information contained in the
 reconciliation.
 
-If a label is corrupted or garbled, describe it as an extraction
-issue instead of guessing its meaning.
+If no physical nameplate information is established, write:
 
+"Not established from the supplied documents."
+
+If a label is corrupted or garbled, describe it as an extraction issue.
+
+Do not guess what a corrupted label means.
 
 ## 8. Uncertainties and extraction issues
 
-List important:
+List the important uncertainties supported by the reconciliation.
+
+Include, where applicable:
 
 - missing values
 - null values
 - ambiguous values
 - corrupted labels
 - model-specific extraction problems
-- source-only information
-- other uncertainties
+- source-only fields
+- uncertain terminology
+- other extraction limitations
 
+Clearly distinguish extraction uncertainty from a genuine technical
+conflict.
+
+Do not turn a corrupted label into a technical specification.
 
 ## 9. Items requiring confirmation from manufacturer
 
 Provide a numbered list of concrete clarification requests.
 
-Only include issues that are actually supported by the
-reconciliation.
+Only include issues supported by the reconciliation.
 
-Prioritize technically important unresolved differences and missing
-model-specific information.
+Prioritize:
 
+1. substantive technical conflicts
+2. important model-specific missing values
+3. ambiguous or corrupted extraction
+4. supporting documentation needed to establish claims
+
+For certification-related requests, use careful wording.
+
+For example:
+
+"Provide available supporting test reports, certificates, declarations,
+or other evidence corresponding to the standards or regulations listed
+in the datasheets, where applicable."
+
+Do not imply that every listed standard necessarily requires a separate
+certificate.
+
+Do not request clarification for simple formatting differences.
 
 ## 10. Short methodology note
 
@@ -495,13 +638,13 @@ Briefly explain that:
 
 - PDF information was extracted and normalized
 - two manufacturer datasheets were compared
-- Gemini was used for reconciliation
+- Gemini was used for structured reconciliation
 - no outside knowledge was used
 - missing and conflicting information was preserved
 - values from other models were not substituted
 
-Make clear that the document is an AI-assisted draft for review.
-
+State that the document is an AI-assisted draft for review and is not
+a final legal, customs, engineering, or regulatory determination.
 
 ============================================================
 RECONCILIATION DATA
@@ -509,167 +652,34 @@ RECONCILIATION DATA
 
 {reconciliation}
 
-
 ============================================================
-FINAL QUALITY CHECK
-============================================================
-
-Before returning the report:
-
-1. Keep the report focused on SUN-5K-G06P3.
-
-2. Do not introduce outside information.
-
-3. Do not invent missing specifications.
-
-4. Do not copy specifications from another model.
-
-5. Do not silently resolve disagreements between Source 1 and Source 2.
-
-6. Preserve source units.
-
-7. Keep meaningful conflicts visible.
-
-8. Do not describe formatting differences as technical conflicts.
-
-9. Do not claim certification without evidence.
-
-10. Report corrupted extraction labels as uncertainties.
-
-11. Keep the document clearly identified as a DRAFT.
-"""
-
-
-# ============================================================
-# 3. OPTIONAL PDF EXTRACTION PROMPT
-# ============================================================
-
-PDF_EXTRACTION_PROMPT = """
-You are extracting structured technical information from a
-manufacturer datasheet for a solar PV inverter.
-
-File:
-{filename}
-
-Extract information directly from the supplied document.
-
-The purpose of the extraction is to support a later comparison of
-two manufacturer datasheets. Accuracy and source traceability are
-more important than filling every field.
-
-
-============================================================
-EXTRACTION TARGETS
+FINAL QUALITY CONTROL
 ============================================================
 
-Look for:
+Before returning the report, internally verify all of the following:
 
-1. Product and model information
-2. Product variant information
-3. Manufacturer information
-4. DC input specifications
-5. AC output specifications
-6. Efficiency
-7. Protection functions
-8. Environmental specifications
-9. Physical specifications
-10. Grid connection standards
-11. Safety and EMC standards
-12. Interfaces and features
-13. Labeling or nameplate information
-14. Extraction problems or unusual labels
+1. The report concerns only SUN-5K-G06P3.
+2. No value from another model was introduced.
+3. No source value was changed.
+4. Original units were preserved.
+5. kW and kVA remain distinct.
+6. Substantive conflicts remain visible.
+7. Source-only information remains source-specific.
+8. Missing information remains explicitly missing.
+9. Corrupted labels are not interpreted by guessing.
+10. Standards are not presented as certification evidence.
+11. Manufacturer information is not invented.
+12. Technical terminology is not silently normalized.
+13. Formatting-only differences are not presented as technical conflicts.
+14. The technical table contains units whenever the source provides them.
+15. All headings use normal Markdown syntax.
+16. No heading is wrapped in bold markers.
+17. Bullet points use normal Markdown syntax.
+18. No unnecessary backslashes are used.
+19. The report is not wrapped in a Markdown code fence.
+20. The document is clearly identified as a DRAFT.
+21. The report follows the ten requested sections.
+22. The final output contains only the Markdown report.
 
-
-============================================================
-EXTRACTION RULES
-============================================================
-
-Extract values as they appear in the document.
-
-Do not:
-
-- invent values
-- calculate values
-- estimate unreadable values
-- copy a value between models
-- assume a value belongs to a model when the table structure does
-  not clearly establish the association
-- convert or normalize units unnecessarily
-- treat standards as certification evidence
-
-Preserve:
-
-- original wording
-- original units
-- model names
-- source page numbers
-- unusual or corrupted text
-
-If information is absent, use null.
-
-If text appears corrupted or garbled, preserve the extracted text
-and add an entry to extraction_issues.
-
-When the document contains multiple models, associate a technical
-value with a model only when the document layout makes that
-association reasonably clear.
-
-
-============================================================
-OUTPUT
-============================================================
-
-Return ONLY valid JSON.
-
-Do not use Markdown.
-Do not use code fences.
-Do not add explanatory prose.
-
-Use this structure:
-
-{{
-  "product_name": null,
-
-  "product_variant": null,
-
-  "manufacturer": {{
-    "company_name": null,
-    "address": null,
-    "website": null,
-    "country": null
-  }},
-
-  "models": [],
-
-  "technical_specs": [],
-
-  "standards": [],
-
-  "labeling": [],
-
-  "extraction_issues": []
-}}
-
-
-Each technical specification should follow this structure:
-
-{{
-  "field": "",
-  "value": null,
-  "unit": null,
-  "model": null,
-  "source_page": null
-}}
-
-
-============================================================
-DOCUMENT
-============================================================
-
-{document_text}
-
-
-============================================================
-END OF DOCUMENT
-============================================================
+Return ONLY the Markdown report.
 """
