@@ -1,6 +1,5 @@
 from pathlib import Path
 import json
-import re
 
 
 # ============================================================
@@ -8,7 +7,7 @@ import re
 # ============================================================
 
 INPUT_PATH = Path(
-    "data/parsed/source_2.json"
+    "data/tables/source_2_table.json"
 )
 
 OUTPUT_PATH = Path(
@@ -17,16 +16,13 @@ OUTPUT_PATH = Path(
 
 
 # ============================================================
-# 2. LOAD PARSED DATA
+# 2. LOAD TABLE DATA
 # ============================================================
 
-def load_parsed_data(path: Path):
-    """Load the output produced by layout_parser.py."""
+def load_table_data(path: Path):
+    """Load output produced by table_parser.py."""
 
-    with path.open(
-        "r",
-        encoding="utf-8"
-    ) as f:
+    with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -35,19 +31,15 @@ def load_parsed_data(path: Path):
 # ============================================================
 
 def normalize_text(text):
-    """
-    Clean small OCR / encoding issues.
-    """
+    """Clean small OCR / encoding issues."""
 
     if text is None:
         return None
 
     text = str(text).strip()
 
-    # Fix common UTF-8/Latin-1 corruption
     replacements = {
         "Â°C": "°C",
-        "Efﬁciency": "Efficiency",
         "Efﬁciency": "Efficiency",
         "ﬁ": "fi",
         "ﬂ": "fl",
@@ -56,179 +48,67 @@ def normalize_text(text):
     for old, new in replacements.items():
         text = text.replace(old, new)
 
-    # Remove trailing commas caused by PDF extraction
     text = text.rstrip(",")
 
     return text
 
 
 # ============================================================
-# 4. EXPAND GROUPED MODELS
-# ============================================================
-
-def expand_group_models(group_string):
-    """
-    Convert:
-
-        'SUN-4K-G06P3, SUN-5K-G06P3'
-
-    into:
-
-        ['SUN-4K-G06P3', 'SUN-5K-G06P3']
-    """
-
-    if not group_string:
-        return []
-
-    models = []
-
-    for model in group_string.split(","):
-
-        model = model.strip()
-
-        if model:
-            models.append(model)
-
-    return models
-
-
-# ============================================================
-# 5. CREATE EMPTY MODEL DICTIONARY
-# ============================================================
-
-def empty_model_dict(models):
-    """
-    Create:
-
-        {
-            model1: None,
-            model2: None,
-            ...
-        }
-    """
-
-    return {
-        model: None
-        for model in models
-    }
-
-
-# ============================================================
-# 6. NORMALIZE ONE ROW
+# 4. NORMALIZE ONE ROW
 # ============================================================
 
 def normalize_row(row, models):
     """
-    Convert one parsed row into:
+    Normalize one table-parser row.
+
+    The table parser produces:
 
         {
-            model1: value,
-            model2: value,
-            ...
+            "parameter": "...",
+            "values": {
+                "MODEL": "VALUE"
+            },
+            "confidence": "...",
+            "flags": [...]
         }
 
-    regardless of whether the source row is:
-
-        common_value
-        model_row
-        grouped_row
+    Missing model values remain None.
     """
 
-    row_type = row.get("type")
     parameter = normalize_text(
         row.get("parameter", "")
     )
 
-    result = empty_model_dict(models)
+    values = row.get("values", {})
 
-    # --------------------------------------------------------
-    # COMMON VALUE
-    # --------------------------------------------------------
+    normalized_values = {
+        model: None
+        for model in models
+    }
 
-    if row_type == "common_value":
+    for model, value in values.items():
 
-        value = normalize_text(
-            row.get("value")
-        )
+        if model in normalized_values:
 
-        for model in models:
-
-            result[model] = value
-
-        return parameter, result
-
-
-    # --------------------------------------------------------
-    # MODEL ROW
-    # --------------------------------------------------------
-
-    if row_type == "model_row":
-
-        values = row.get(
-            "values",
-            {}
-        )
-
-        for model in models:
-
-            if model in values:
-
-                result[model] = normalize_text(
-                    values[model]
-                )
-
-        return parameter, result
-
-
-    # --------------------------------------------------------
-    # GROUPED ROW
-    # --------------------------------------------------------
-
-    if row_type == "grouped_row":
-
-        values = row.get(
-            "values",
-            {}
-        )
-
-        for model_group, value in values.items():
-
-            group_models = expand_group_models(
-                model_group
-            )
-
-            clean_value = normalize_text(
+            normalized_values[model] = normalize_text(
                 value
             )
 
-            for model in group_models:
-
-                if model in result:
-
-                    result[model] = clean_value
-
-        return parameter, result
-
-
-    # --------------------------------------------------------
-    # UNKNOWN / EMPTY ROW
-    # --------------------------------------------------------
-
-    return parameter, result
+    return parameter, normalized_values
 
 
 # ============================================================
-# 7. NORMALIZE COMPLETE TABLE
+# 5. NORMALIZE COMPLETE TABLE
 # ============================================================
 
-def normalize_table(parsed_data):
+def normalize_table(table_data):
 
-    models = parsed_data.get(
+    models = table_data.get(
         "models",
         []
     )
 
-    rows = parsed_data.get(
+    rows = table_data.get(
         "rows",
         []
     )
@@ -246,17 +126,13 @@ def normalize_table(parsed_data):
             models
         )
 
-        # Ignore rows without a parameter name
         if not parameter:
-
             print(
                 "WARNING: Skipping row without parameter:",
                 row
             )
-
             continue
 
-        # Store parameter
         parameters[parameter] = values
 
     # --------------------------------------------------------
@@ -280,6 +156,7 @@ def normalize_table(parsed_data):
     # --------------------------------------------------------
 
     normalized_data = {
+        "source": table_data.get("source"),
         "models": models,
         "parameters": parameters,
         "by_model": by_model
@@ -289,7 +166,7 @@ def normalize_table(parsed_data):
 
 
 # ============================================================
-# 8. PRINT SUMMARY
+# 6. PRINT SUMMARY
 # ============================================================
 
 def print_summary(data):
@@ -311,23 +188,44 @@ def print_summary(data):
         f"Parameters: {len(parameters)}"
     )
 
+    # --------------------------------------------------------
+    # Missing-value summary
+    # --------------------------------------------------------
+
     print()
+    print("=" * 100)
+    print("MISSING VALUES")
+    print("=" * 100)
+
+    for model in models:
+
+        missing = 0
+
+        for parameter, values in parameters.items():
+
+            if values.get(model) is None:
+                missing += 1
+
+        print(
+            f"{model}: {missing} missing"
+        )
 
     # --------------------------------------------------------
-    # Show model example
+    # Example model
     # --------------------------------------------------------
 
     if models:
 
         example_model = models[0]
 
+        print()
         print("=" * 100)
         print(
             f"EXAMPLE: {example_model}"
         )
         print("=" * 100)
 
-        for parameter, values in data["parameters"].items():
+        for parameter, values in parameters.items():
 
             value = values.get(
                 example_model
@@ -339,7 +237,7 @@ def print_summary(data):
 
 
 # ============================================================
-# 9. SAVE JSON
+# 7. SAVE JSON
 # ============================================================
 
 def save_json(data, path: Path):
@@ -363,36 +261,44 @@ def save_json(data, path: Path):
 
 
 # ============================================================
-# 10. MAIN
+# 8. MAIN
 # ============================================================
 
 if __name__ == "__main__":
 
     print()
     print("=" * 100)
-    print("LOADING PARSED DATA")
+    print("LOADING TABLE DATA")
     print("=" * 100)
 
-    parsed_data = load_parsed_data(
+    table_data = load_table_data(
         INPUT_PATH
     )
 
     print(
-        f"Models found: {len(parsed_data['models'])}"
+        f"Source: {table_data.get('source')}"
     )
 
-    for model in parsed_data["models"]:
+    print(
+        f"Models found: {len(table_data['models'])}"
+    )
+
+    for model in table_data["models"]:
 
         print(
             f"  - {model}"
         )
+
+    print(
+        f"Rows found: {len(table_data['rows'])}"
+    )
 
     # --------------------------------------------------------
     # Normalize
     # --------------------------------------------------------
 
     normalized_data = normalize_table(
-        parsed_data
+        table_data
     )
 
     # --------------------------------------------------------
