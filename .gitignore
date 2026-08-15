@@ -11,6 +11,10 @@ wheels/
 
 .env
 
-data/
+data/parsed
+data/raw
+data/tables
+data/extracted
+data/normalized
 
 .vscode/

@@ -1,0 +1,811 @@
+{
+  "product": "SUN-5K-G06P3",
+  "source_documents": {
+    "source_1": {
+      "models": [
+        "SUN-4K-G06P3",
+        "SUN-5K-G06P3",
+        "SUN-6K-G06P3",
+        "SUN-7K-G06P3",
+        "SUN-8K-G06P3",
+        "SUN-10K-G06P3",
+        "SUN-12K-G06P3",
+        "SUN-15K-G06P3"
+      ],
+      "variant": "Ningbo Deye Inverter Technology Co., Ltd. Datasheet (Source 1)",
+      "observations": [
+        "Lists 8 models from 4K to 15K.",
+        "Manufacturer is Ningbo Deye Inverter Technology Co., Ltd."
+      ]
+    },
+    "source_2": {
+      "models": [
+        "SUN-4K-G06P3",
+        "SUN-5K-G06P3",
+        "SUN-6K-G06P3",
+        "SUN-7K-G06P3",
+        "SUN-8K-G06P3",
+        "SUN-10K-G06P3",
+        "SUN-12K-G06P3",
+        "SUN-15K-G06P3"
+      ],
+      "variant": "Ningbo Deye Inverter Technology Co., Ltd. Datasheet (Source 2)",
+      "observations": [
+        "Lists 8 models from 4K to 15K.",
+        "Contains corrupted fields such as 'GWeenigehrat l( kDga)ta' and a corrupted 'Type of Cooling' field merging grid standards."
+      ]
+    }
+  },
+  "fields": [
+    {
+      "field": "Max. DC Input Power",
+      "source_1": {
+        "value": "6.5 kW",
+        "confidence": "high",
+        "note": "Listed as 'Max. DC Input Power (kW)'"
+      },
+      "source_2": {
+        "value": "6.5 kW",
+        "confidence": "high",
+        "note": "Listed as 'Max. PV Input Power (kW)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Max. DC Input Voltage",
+      "source_1": {
+        "value": "1100 V",
+        "confidence": "high",
+        "note": "Listed as 'Max. DC Input Voltage (V)'"
+      },
+      "source_2": {
+        "value": "1100 V",
+        "confidence": "high",
+        "note": "Listed as 'Max. PV Input Voltage (V)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Start-up DC Input Voltage",
+      "source_1": {
+        "value": "140 V",
+        "confidence": "high",
+        "note": "Listed as 'Start-up DC Input Voltage (V)'"
+      },
+      "source_2": {
+        "value": "140 V",
+        "confidence": "high",
+        "note": "Listed as 'Start-up Voltage (V)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "MPPT Operating Range",
+      "source_1": {
+        "value": "120-1000 V",
+        "confidence": "high",
+        "note": "Listed as 'MPPT Operating Range (V)'"
+      },
+      "source_2": {
+        "value": "120-1000 V",
+        "confidence": "high",
+        "note": "Listed as 'MPPT Voltage Range (V)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Rated PV Input Voltage",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 1"
+      },
+      "source_2": {
+        "value": "600 V",
+        "confidence": "high",
+        "note": "Listed as 'Rated PV Input Voltage (V)'"
+      },
+      "status": "source_2_only"
+    },
+    {
+      "field": "Max. DC Input Current",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Value is null for SUN-5K-G06P3"
+      },
+      "source_2": {
+        "value": null,
+        "confidence": "low",
+        "note": "Value is null for SUN-5K-G06P3"
+      },
+      "status": "uncertain"
+    },
+    {
+      "field": "Max. Short Circuit Current",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Value is null for SUN-5K-G06P3"
+      },
+      "source_2": {
+        "value": null,
+        "confidence": "low",
+        "note": "Value is null for SUN-5K-G06P3"
+      },
+      "status": "uncertain"
+    },
+    {
+      "field": "No. of MPP Trackers",
+      "source_1": {
+        "value": "2",
+        "confidence": "high",
+        "note": "Listed as 'No.of MPP Trackers'"
+      },
+      "source_2": {
+        "value": null,
+        "confidence": "low",
+        "note": "Value is null for SUN-5K-G06P3 in the combined field 'No. of MPP Trackers/No. of Strings per MPP Tracker'"
+      },
+      "status": "source_1_only"
+    },
+    {
+      "field": "No. of Strings per MPP Tracker",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Value is null for SUN-5K-G06P3"
+      },
+      "source_2": {
+        "value": null,
+        "confidence": "low",
+        "note": "Value is null for SUN-5K-G06P3"
+      },
+      "status": "uncertain"
+    },
+    {
+      "field": "Rated Output Power",
+      "source_1": {
+        "value": "5 kW",
+        "confidence": "high",
+        "note": "Listed as 'Rated Output Power (kW)'"
+      },
+      "source_2": {
+        "value": "5 kW",
+        "confidence": "high",
+        "note": "Listed as 'Rated AC Output Active Power (kW)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Max. Active / Apparent Power",
+      "source_1": {
+        "value": "5.5 kW",
+        "confidence": "high",
+        "note": "Listed as 'Max. Active Power (kW)'"
+      },
+      "source_2": {
+        "value": "5.5 kVA",
+        "confidence": "high",
+        "note": "Listed as 'Max. AC Output Apparent Power (kVA)'"
+      },
+      "status": "conflict"
+    },
+    {
+      "field": "Rated Output Voltage/Range",
+      "source_1": {
+        "value": "3L/N/PE 220/380V, 230/400V 0.85Un-1.1Un (this may vary with grid standards)",
+        "confidence": "high",
+        "note": "Listed as 'Rated Output Voltage/Range (V)'"
+      },
+      "source_2": {
+        "value": "220/380V, 230/400V 0.85Un-1.1Un",
+        "confidence": "high",
+        "note": "Listed as 'Rated Output Voltage/Range (V)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Operating Phase / Grid Connection Form",
+      "source_1": {
+        "value": "Three Phase",
+        "confidence": "high",
+        "note": "Listed as 'Operating Phase'"
+      },
+      "source_2": {
+        "value": "3L/N/PE",
+        "confidence": "high",
+        "note": "Listed as 'Grid Connection Form'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Rated AC Grid Output Current",
+      "source_1": {
+        "value": "7.6/7.3 A",
+        "confidence": "high",
+        "note": "Listed as 'Rated AC Grid Output Current (A)'"
+      },
+      "source_2": {
+        "value": "7.6/7.3 A",
+        "confidence": "high",
+        "note": "Listed as 'Rated AC Output Current (A)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Max. AC Output Current",
+      "source_1": {
+        "value": "8.4/8 A",
+        "confidence": "high",
+        "note": "Listed as 'Max. AC Output Current (A)'"
+      },
+      "source_2": {
+        "value": "8.4/8 A",
+        "confidence": "high",
+        "note": "Listed as 'Max. AC Output Current (A)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Power Factor Adjustment Range",
+      "source_1": {
+        "value": "0.8 leading to 0.8 lagging",
+        "confidence": "high",
+        "note": "Listed as 'Power Factor Adjustment Range'"
+      },
+      "source_2": {
+        "value": "0.8 leading to 0.8 lagging",
+        "confidence": "high",
+        "note": "Listed as 'Power Factor Adjustment Range'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Total Harmonics Current Distortion (THDi)",
+      "source_1": {
+        "value": "<3%",
+        "confidence": "high",
+        "note": "Listed as 'Total Harmonics Current Distortion (THDi)'"
+      },
+      "source_2": {
+        "value": "<3%",
+        "confidence": "high",
+        "note": "Listed as 'Total Current Harmonic Distortion THDi'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "DC Injection Current",
+      "source_1": {
+        "value": "<0.5%",
+        "confidence": "high",
+        "note": "Listed as 'DC Injection Current (mA)'"
+      },
+      "source_2": {
+        "value": "<0.5%ln",
+        "confidence": "high",
+        "note": "Listed as 'DC Injection Current'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Max. Efficiency",
+      "source_1": {
+        "value": "98.2%",
+        "confidence": "high",
+        "note": "Listed as 'Max. Efficiency'"
+      },
+      "source_2": {
+        "value": "98.2%",
+        "confidence": "high",
+        "note": "Listed as 'Max. Efficiency'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Euro Efficiency",
+      "source_1": {
+        "value": "97.5%",
+        "confidence": "high",
+        "note": "Listed as 'Euro Efficiency'"
+      },
+      "source_2": {
+        "value": "97.6%",
+        "confidence": "high",
+        "note": "Listed as 'Euro Efficiency'"
+      },
+      "status": "conflict"
+    },
+    {
+      "field": "MPPT Efficiency",
+      "source_1": {
+        "value": ">99%",
+        "confidence": "high",
+        "note": "Listed as 'MPPT Efficiency'"
+      },
+      "source_2": {
+        "value": ">99%",
+        "confidence": "high",
+        "note": "Listed as 'MPPT Efficiency'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Cabinet Size",
+      "source_1": {
+        "value": "283×463×178 (Excluding connectors and brackets) mm",
+        "confidence": "high",
+        "note": "Listed as 'Cabinet Size (WxHxD mm)'"
+      },
+      "source_2": {
+        "value": "283×463×178 (Excluding Connectors and Brackets) mm",
+        "confidence": "high",
+        "note": "Listed as 'Cabinet Size (WxHxD mm)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Weight",
+      "source_1": {
+        "value": "11 kg",
+        "confidence": "high",
+        "note": "Listed as 'Weight (kg)'"
+      },
+      "source_2": {
+        "value": "11 kg",
+        "confidence": "high",
+        "note": "Listed as 'Weight (kg)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Topology",
+      "source_1": {
+        "value": "Transformerless",
+        "confidence": "high",
+        "note": "Listed as 'Topology'"
+      },
+      "source_2": {
+        "value": "Non-Isolated",
+        "confidence": "high",
+        "note": "Listed as 'Inverter Topology'"
+      },
+      "status": "conflict"
+    },
+    {
+      "field": "Running Temperature",
+      "source_1": {
+        "value": "-25 to +60 , >45 Derating ℃ ℃",
+        "confidence": "high",
+        "note": "Listed as 'Running Temperature'"
+      },
+      "source_2": {
+        "value": "-25 to +60 , >45 Derating ℃ ℃",
+        "confidence": "high",
+        "note": "Listed as 'Operating Temperature Range (°C)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Ingress Protection",
+      "source_1": {
+        "value": "IP65",
+        "confidence": "high",
+        "note": "Listed as 'Ingress Protection'"
+      },
+      "source_2": {
+        "value": "IP 65",
+        "confidence": "high",
+        "note": "Listed as 'Ingress Protection(IP) Rating'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Noise Emission",
+      "source_1": {
+        "value": "<45 dB",
+        "confidence": "high",
+        "note": "Listed as 'Noise Emission (Typical)'"
+      },
+      "source_2": {
+        "value": "<45",
+        "confidence": "high",
+        "note": "Listed as 'Noise (dB)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Cooling Concept",
+      "source_1": {
+        "value": "Free Cooling Smart Cooling",
+        "confidence": "high",
+        "note": "Listed as 'Cooling Concept'"
+      },
+      "source_2": {
+        "value": "Natural Cooling IEC 61727, IEC 62116, CEI 0-21, EN 50549, NRS 097, RD 140, UNE 217002",
+        "confidence": "low",
+        "note": "Listed as 'Type of Cooling'. This field is corrupted and appends grid standards to the cooling type."
+      },
+      "status": "uncertain"
+    },
+    {
+      "field": "Permissible Altitude",
+      "source_1": {
+        "value": "4000 m",
+        "confidence": "high",
+        "note": "Listed as 'Permissible Altitude (m)'"
+      },
+      "source_2": {
+        "value": "4000m",
+        "confidence": "high",
+        "note": "Listed as 'Permissible Altitude (m)'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Warranty",
+      "source_1": {
+        "value": "5 Years",
+        "confidence": "high",
+        "note": "Listed as 'Warranty'"
+      },
+      "source_2": {
+        "value": "5 Years",
+        "confidence": "high",
+        "note": "Listed as 'Warranty'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Grid Connection Standard / Grid Regulation",
+      "source_1": {
+        "value": "IEC 61727, IEC 62116, EN 50549",
+        "confidence": "high",
+        "note": "Listed as 'Grid Connection Standard'"
+      },
+      "source_2": {
+        "value": "OVE-Richtlinie R25, G99, VDE-AR-N 4105",
+        "confidence": "high",
+        "note": "Listed as 'Grid Regulation'. Note that additional standards are corruptedly appended to the 'Type of Cooling' field in Source 2."
+      },
+      "status": "conflict"
+    },
+    {
+      "field": "Safety / EMC Standard",
+      "source_1": {
+        "value": "IEC/EN 61000-6-1/2/3/4, IEC/EN 62109-1, IEC/EN 62109-2",
+        "confidence": "high",
+        "note": "Listed as 'Safety / EMC Standard'"
+      },
+      "source_2": {
+        "value": "IEC/EN 61000-6-1/2/3/4, IEC/EN 62109-1, IEC/EN 62109-2",
+        "confidence": "high",
+        "note": "Listed as 'Safety EMC/Standard'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Display",
+      "source_1": {
+        "value": "LCD1602",
+        "confidence": "high",
+        "note": "Listed as 'Display'"
+      },
+      "source_2": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 2"
+      },
+      "status": "source_1_only"
+    },
+    {
+      "field": "Interface",
+      "source_1": {
+        "value": "RS485/RS232/Wifi/LAN",
+        "confidence": "high",
+        "note": "Listed as 'Interface'"
+      },
+      "source_2": {
+        "value": "RS485/RS232 /WiFi/LAN",
+        "confidence": "high",
+        "note": "Listed as 'Communication Interface'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Internal Consumption",
+      "source_1": {
+        "value": "<1W (Night)",
+        "confidence": "high",
+        "note": "Listed as 'Internal Consumption'"
+      },
+      "source_2": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 2"
+      },
+      "status": "source_1_only"
+    },
+    {
+      "field": "Over Voltage Category",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 1"
+      },
+      "source_2": {
+        "value": "OVC II(DC), OVC III(AC)",
+        "confidence": "high",
+        "note": "Listed as 'Over Voltage Category'"
+      },
+      "status": "source_2_only"
+    },
+    {
+      "field": "Surge Protection",
+      "source_1": {
+        "value": "DC Type II / AC Type II",
+        "confidence": "high",
+        "note": "Listed as 'Surge Protection'"
+      },
+      "source_2": {
+        "value": "TYPE II(DC), TYPE II(AC)",
+        "confidence": "high",
+        "note": "Listed as 'Surge Protection Level'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "DC Reverse-Polarity Protection",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'DC Reverse-Polarity Protection'"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'DC Polarity Reverse Connection Protection'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "AC Short Circuit Protection",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'AC Short Circuit Protection'"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'AC Output Short Circuit Protection'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "AC Output Overcurrent Protection",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'AC Output Overcurrent Protection'"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'AC Output Overcurrent Protection'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Output Overvoltage Protection",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Output Overvoltage Protection'"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'AC Output Overvoltage Protection'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Insulation Resistance Protection",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Insulation Resistance Protection'"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'DC Terminal Insulation Impedance Monitoring'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Ground Fault Monitoring",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Ground Fault Monitoring'"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Ground Fault Current Monitoring'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Anti-islanding Protection",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Anti-islanding Protection'"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Island Protection Monitoring'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Temperature Protection",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Temperature Protection'"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Thermal Protection'"
+      },
+      "status": "agreement"
+    },
+    {
+      "field": "Integrated DC Switch",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Integrated DC Switch'"
+      },
+      "source_2": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 2"
+      },
+      "status": "source_1_only"
+    },
+    {
+      "field": "Remote Software Upload",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Remote Software Upload'"
+      },
+      "source_2": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 2"
+      },
+      "status": "source_1_only"
+    },
+    {
+      "field": "Remote Change of Operating Parameters",
+      "source_1": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Remote Change of Operating Parameters'"
+      },
+      "source_2": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 2"
+      },
+      "status": "source_1_only"
+    },
+    {
+      "field": "DC Component Monitoring",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 1"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'DC Component Monitoring'"
+      },
+      "status": "source_2_only"
+    },
+    {
+      "field": "Power Network Monitoring",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 1"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Power Network Monitoring'"
+      },
+      "status": "source_2_only"
+    },
+    {
+      "field": "Earth Fault Detection",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 1"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Earth Fault Detection'"
+      },
+      "status": "source_2_only"
+    },
+    {
+      "field": "Overvoltage Load Drop Protection",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 1"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Overvoltage Load Drop Protection'"
+      },
+      "status": "source_2_only"
+    },
+    {
+      "field": "Residual Current (RCD) Detection",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 1"
+      },
+      "source_2": {
+        "value": "Yes",
+        "confidence": "high",
+        "note": "Listed as 'Residual Current (RCD) Detection'"
+      },
+      "status": "source_2_only"
+    },
+    {
+      "field": "GWeenigehrat l( kDga)ta",
+      "source_1": {
+        "value": null,
+        "confidence": "low",
+        "note": "Not listed in Source 1"
+      },
+      "source_2": {
+        "value": "4.8",
+        "confidence": "low",
+        "note": "Corrupted label in Source 2, possibly a garbled combination of 'General Data' and 'Weight' or another parameter."
+      },
+      "status": "uncertain"
+    }
+  ],
+  "uncertainties": [
+    "Max. DC Input Current (A) is null in both sources for SUN-5K-G06P3.",
+    "Max. Short Circuit Current (A) is null in both sources for SUN-5K-G06P3.",
+    "No.of Strings per MPP Tracker is null in both sources for SUN-5K-G06P3.",
+    "The field 'Type of Cooling' in Source 2 is corrupted, merging the cooling type 'Natural Cooling' with a list of grid standards.",
+    "The field 'GWeenigehrat l( kDga)ta' in Source 2 is corrupted and its meaning is highly uncertain, though its value is '4.8' across all models."
+  ],
+  "important_observations": [
+    "There is a unit conflict for maximum output power: Source 1 lists 'Max. Active Power (kW)' as 5.5, whereas Source 2 lists 'Max. AC Output Apparent Power (kVA)' as 5.5.",
+    "There is a conflict in Euro Efficiency: Source 1 lists 97.5% while Source 2 lists 97.6%.",
+    "There is a conflict in Inverter Topology: Source 1 lists 'Transformerless' while Source 2 lists 'Non-Isolated'.",
+    "Source 2 has a corrupted 'Type of Cooling' field which appends several grid standards ('IEC 61727, IEC 62116, CEI 0-21, EN 50549, NRS 097, RD 140, UNE 217002') to the cooling type 'Natural Cooling'.",
+    "Grid standards listed in the datasheets do not constitute proof of certification under the evidence rules."
+  ]
+}
