@@ -1,3 +1,5 @@
+from pathlib import Path
+
 SOURCE_DOCUMENTS = {
     "source_1": {
         "name": "AM2-P1 datasheet",
@@ -9,4 +11,12 @@ SOURCE_DOCUMENTS = {
     },
 }
 
-TARGET_MODEL = "SUN-5K-G06P3-EU-AM2-P1"
+TARGET_MODEL = "SUN-5K-G06P3"
+
+
+DATA_DIR = Path("data")
+RAW_DATA_DIR = DATA_DIR / "raw"
+EXTRACTED_DATA_DIR = DATA_DIR / "extracted"
+PARSED_DATA_DIR = DATA_DIR / "parsed"
+NORMALIZED_DATA_DIR = DATA_DIR / "normalized"
+OUTPUT_DIR = Path("output")

@@ -1,58 +1,60 @@
 from pathlib import Path
 import json
 
-import pymupdf
+import pdfplumber
 
 
 def extract_pdf(pdf_path: Path, output_dir: Path) -> Path:
     """
-    Extract text and word-level positional information from a PDF.
+    Extract word-level text and coordinates from a PDF using pdfplumber.
 
-    Each word retains its page number and coordinates so that
-    downstream processing can reason about table layout.
+    The extracted words retain their page number and position so that
+    downstream parsing can reconstruct the visually positioned table.
     """
-
-    doc = pymupdf.open(pdf_path)
 
     pages = []
 
-    for page_number, page in enumerate(doc, start=1):
-        words = page.get_text("words")
+    with pdfplumber.open(pdf_path) as pdf:
 
-        page_words = []
+        for page_number, page in enumerate(pdf.pages, start=1):
 
-        for word in words:
-            x0, y0, x1, y1, text, block, line, word_no = word
-
-            page_words.append(
-                {
-                    "text": text,
-                    "x0": round(x0, 2),
-                    "y0": round(y0, 2),
-                    "x1": round(x1, 2),
-                    "y1": round(y1, 2),
-                    "block": block,
-                    "line": line,
-                    "word": word_no,
-                }
+            words = page.extract_words(
+                use_text_flow=False,
+                keep_blank_chars=False,
             )
 
-        pages.append(
-            {
-                "page": page_number,
-                "width": page.rect.width,
-                "height": page.rect.height,
-                "words": page_words,
-            }
-        )
+            page_words = []
 
-    doc.close()
+            for word in words:
+                page_words.append(
+                    {
+                        "text": word["text"],
+                        "x0": round(word["x0"], 2),
+                        "x1": round(word["x1"], 2),
+                        "top": round(word["top"], 2),
+                        "bottom": round(word["bottom"], 2),
+                    }
+                )
+
+            pages.append(
+                {
+                    "page": page_number,
+                    "width": page.width,
+                    "height": page.height,
+                    "words": page_words,
+                }
+            )
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_path = output_dir / f"{pdf_path.stem}.json"
 
     with output_path.open("w", encoding="utf-8") as f:
-        json.dump(pages, f, indent=2, ensure_ascii=False)
+        json.dump(
+            pages,
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
 
     return output_path
