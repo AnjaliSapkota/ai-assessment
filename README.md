@@ -1,184 +1,272 @@
-# SunBridge Trading -- Task 1: China -> Nepal
+# Cantordust AI Engineer Assessment — Task 1
 
-AI-assisted extraction and reconciliation pipeline for two conflicting
-Deye manufacturer datasheets (the AM2-P1 and AM2 variants), producing
-a compliance-review draft for SunBridge's import agent, focused on the
-5 kW model (`SUN-5K-G06P3`).
+**SunBridge Trading — China → Nepal import compliance draft**
+**Product: SUN-5K-G06P3 (5 kW grid-tied inverter)**
 
-## What this does
+This repo pulls the SUN-5K-G06P3 facts out of two Deye manufacturer
+datasheets that don't fully agree, reconciles them field by field, and
+generates the draft document SunBridge would hand to its import agent —
+showing agreements, conflicts, source-only fields, and anything that's
+still unclear.
 
-```
-Source PDFs (2)
-    |
-    v
-download           -- fetch the two datasheets from deyeinverter.com
-    |
-    v
-extract             -- pdfplumber: pull every word + its (x, y) position
-    |
-    v
-parse layout         -- reconstruct the visual table: find the model-header
-    |                    row, cluster remaining words into rows by y, assign
-    |                    each value to the nearest model column by x
-    v
-build table           -- clean labels/values into {parameter, values{model:val}}
-    |                    rows, with confidence + flags per row
-    v
-normalize             -- reshape into a clean {parameters, by_model} schema,
-    |                    fix encoding artifacts, expand shared/multi-model rows
-    v
-validate               -- sanity-check the normalized data, surface warnings
-    |
-    v
-reconcile (Gemini)      -- compare Source 1 vs Source 2 for SUN-5K-G06P3 only:
-    |                       agree / conflict / only-in-one-source / not-established
-    v
-generate report (Gemini) -- turn the reconciliation into the Markdown draft
-                            SunBridge would actually hand to its agent
-```
+Sources (fetched by the pipeline, not hardcoded from memory):
+
+- Source 1 — AM2-P1 variant datasheet:
+  `datasheet_sun-4-12k-g06p3-eu-am2-p1_231007_en.pdf`
+- Source 2 — AM2 variant datasheet:
+  `datasheet_sun-4-15k-g06p3-eu-am2_240318_en.pdf`
 
 ## How to run it
 
+Requirements: Python 3.12, [uv](https://docs.astral.sh/uv/), and a Gemini
+API key.
+
+Create a .env file  and set ``` GEMINI_API_KEY=<your key>``` in .env
+
+You can get free api key from Google AI Studio.
+
 ```bash
 uv sync
-cp .env.example .env   # add your GEMINI_API_KEY
 uv run python main.py
 ```
 
-That single command runs the entire pipeline end to end for both
-sources. Every step is idempotent -- if a file for a given step
-already exists (e.g. `data/raw/source_1.pdf`), that step is skipped,
-so re-running after a crash (most likely: a missing `GEMINI_API_KEY`)
-doesn't re-download or re-parse anything.
+`main.py` runs the whole thing end to end: download, extract, parse,
+normalize, validate, reconcile, report. Every stage checkpoints to disk
+under `data/`, and each step is skipped if its output already exists, so
+re-running after an interruption (or after only editing a later stage)
+picks up where it left off rather than re-downloading or re-parsing PDFs
+that haven't changed. Delete the relevant file/folder under `data/` to
+force a stage to redo its work.
 
 Outputs land in `data/output/`:
 
-- `reconciliation.json` -- the structured, field-by-field comparison
-  (machine-readable, with per-field source attribution)
-- `compliance_draft.md` -- the human-readable draft for the agent
+- `reconciliation.json` — the structured, field-by-field comparison
+- `compliance_draft.md` — the human-readable draft for the import agent
 
-To re-run a single stage in isolation (useful while debugging one
-source):
+## Pipeline structure
 
-```bash
-uv run python table_parser.py                 # both sources
-uv run python normalize_parser.py source_1    # one source
-uv run python validator.py source_2           # one source
+```
+[1] download_sources     fetch both PDFs from the manufacturer URLs
+[2] extract_sources      pdfplumber: word-level text + x/y coordinates per page
+[3] parse_layout         reconstruct the spec table from word coordinates
+[4] build_tables         turn the reconstructed layout into {parameter: {model: value}} rows
+[5] normalize_sources    clean encoding artifacts, resolve model-key aliases, build a
+                          model-centric view
+[6] validate_sources     sanity-check models/parameters/values; non-fatal, logged and
+                          carried forward
+[7] LangGraph workflow   load_data → reconcile → generate_report  (Gemini)
 ```
 
-## Why deterministic extraction + an LLM reconciliation step, not an LLM doing the extraction itself
+Steps 1–6 are deterministic Python (no LLM involved), they turn two PDFs
+into two clean, comparable JSON documents. Step 7 is a 3-node LangGraph
+graph (`workflow/graph.py`) that hands those two normalized JSON documents
+to Gemini for the parts that need judgment: deciding whether a difference
+is a real technical conflict or just a formatting difference, and writing
+the final narrative draft. The reconciliation and report prompts
+(`workflow/prompt.py`) are deliberately strict about evidence discipline,
+no outside knowledge, no inventing or estimating values, no borrowing a
+value from another model in the table, kW vs kVA never treated as
+equivalent, and a standard being *listed* is never treated as proof of
+*certification*.
 
-The two hardest problems here are different in kind:
+## Architecture
 
-- **Getting numbers out of the PDF table** is a *geometry* problem --
-  which value sits under which model-header column. A coordinate-based
-  parser (pdfplumber word positions -> nearest-column assignment) is
-  more auditable and repeatable for this than asking a model to read a
-  table image or dumped text and hope it keeps 8 columns straight. Every
-  row carries a `confidence` and `flags` field so a low-confidence
-  extraction is visible rather than silently trusted.
-- **Deciding what a mismatch between two documents means for an import
-  review** is a *judgment* problem -- this is where Gemini is used,
-  constrained to the two already-normalized JSON documents (no web
-  search, no outside knowledge, no inventing or copying values between
-  models -- see `workflow/prompt.py`), to reconcile per-field agreement/
-  conflict/source-only status for `SUN-5K-G06P3` specifically, then to
-  write the prose draft from that structured reconciliation, not from
-  the raw documents.
+![SunBridge Pipeline Architecture](images/pipeline_architecture.png)
 
-### Known limitation of this design
+For the interactive Mermaid version, see the [full architecture diagram](architecture.md).
+You need to install Mermaid preview VSCode extension to preview live version.
 
-The geometric extraction path is tuned to this specific document
-family: the Deye datasheets used here list 8 power-rating variants as
-column headers (`SUN-4K` ... `SUN-15K`), and `layout_parser.py` finds
-the spec-table page by looking for the page with the most `SUN-`
-prefixed words. If a revision changed the number of model columns,
-this degrades to a printed warning rather than a hard crash (see
-`EXPECTED_MODEL_COLUMNS` in `layout_parser.py`), but the row-clustering
-and column-assignment heuristics (`ROW_TOL`, `LABEL_MAX_X`) are still
-tuned to this layout family and haven't been tested against a visually
-different datasheet. With more time, the right fix is a verification
-pass: after the deterministic parse, ask Gemini to spot-check the
-extracted table against the raw page text/image and flag likely
-misalignments, rather than trusting the geometry alone.
+## Extraction approach, and why
+
+Both PDFs are text-layer datasheets (not scans), so OCR isn't needed —
+`pdfplumber.extract_words()` returns real character positions directly.
+
+The technical spec table itself isn't extracted with pdfplumber's built-in
+table detector. These datasheets lay out an 8-model comparison table with
+inconsistent row heights and values that visually wrap across multiple
+lines, which trips up generic table detection. Instead, `layout_parser.py`
+does its own reconstruction from raw word coordinates:
+
+1. Cluster words into visual rows by `top` coordinate (`cluster_rows`).
+2. Find the row containing all 8 model-number headers, and use each
+   header's horizontal center as that column's anchor.
+3. Merge rows that are really one wrapped field split across multiple
+   lines back into a single logical row (`merge_wrapped_rows`) — this
+   handles both a label sitting alone on its own line, and a value that
+   starts on one line and spills onto further lines.
+4. Assign every value token to its nearest model column by x-position,
+   flagging collisions or partial rows rather than guessing silently.
+
+Manufacturer legal name / address is handled as a **separate** pass
+(`extract_manufacturer_info`) over the free text of every page, not the
+table region. It lives in ordinary footer text in this document family,
+so the table-row parser structurally never sees it — extracting it
+required its own regex-based line search, and it's marked as
+`extraction_method: "footer_free_text_regex"` with low confidence rather
+than folded into the table data as if it were a labeled field.
+
+## Structured output & source attribution
+
+`data/output/reconciliation.json` gives, per field: the value from
+Source 1, the value from Source 2, a confidence tag for each
+(`high` / `low`), and a status (`agreement`, `conflict`, `source_1_only`,
+`source_2_only`, `uncertain`). Manufacturer identity is included as its
+own field even though it isn't part of the per-model table, and is always
+capped at `low` confidence since it comes from a regex scan rather than a
+labeled cell. Earlier stages (`data/parsed/`, `data/tables/`,
+`data/normalized/`) preserve intermediate confidence/flag information per
+row (`per_model_columnar`, `spanning_or_partial`, `merged_wrapped_continuation`,
+etc.) so a value's provenance can be traced back through the pipeline, not
+just asserted in the final JSON.
+
+## Important extraction issue found and fixed
+ 
+### Wrapped value lines were being dropped/truncated
+ 
+During validation of the reconciliation output, a false conflict was found
+in **Grid Connection Standard / Grid Regulation**.
+ 
+The reconciliation initially reported:
+ 
+| Source 1                       | Source 2                               | Status   |
+| ------------------------------ | --------------------------------------- | -------- |
+| IEC 61727, IEC 62116, EN 50549 | OVE-Richtlinie R25, G99, VDE-AR-N 4105  | conflict |
+ 
+However, Source 2's PDF contains the complete value as a single wrapped
+field:
+ 
+```text
+IEC 61727, IEC 62116, CEI 0-21, EN 50549, NRS 097, RD 140,
+UNE 217002, OVE-Richtlinie R25, G99, VDE-AR-N 4105
+```
+ 
+Therefore, Source 2 is a **superset of Source 1 rather than a
+contradiction**. The original parser had captured only the second physical
+line, silently dropping the first part of the standards list.
+ 
+This was particularly important because the dropped values included
+`IEC 61727`, `IEC 62116`, and `EN 50549`, which are directly relevant to the
+reconciliation.
+ 
+### Root cause
+ 
+The original `merge_wrapped_rows()` handled a row where a label appeared on
+its own line followed by a value row, but did not correctly handle the case
+where:
+ 
+1. a row already contained both a label and the first part of its value; and
+2. one or more following rows contained continuation text with no new
+   label.
+As a result, a multi-line field such as `Grid Regulation` could be
+truncated during layout parsing or subsequent row processing.
+ 
+The downstream `table_parser.merge_parameterless_value_rows()` also had a
+merge-back condition that expected the previous row to have no value yet.
+That assumption does not hold when the first physical row already contains
+the label and a partial value.
+ 
+### Fix
+ 
+`merge_wrapped_rows()` was rewritten to continue absorbing follow-on
+value-only rows when they are likely continuations of the current field.
+ 
+A new `looks_like_continuation()` heuristic was added. It considers factors
+such as token count and the proportion of non-numeric tokens to distinguish
+wrapped prose or standards lists from genuine per-model value rows.
+ 
+This allows the parser to handle values wrapping across two or more
+physical lines while reducing the risk of incorrectly merging separate
+table rows.
+ 
+The fix was verified with synthetic word-level data reproducing the
+multi-line `Grid Regulation` structure. The complete standards list is now
+reconstructed as a single field, and the manufacturer footer extraction was
+also verified.
+ 
+Because the pipeline checkpoints intermediate results to disk, a full
+re-run after parser changes requires deleting the affected cached outputs
+under `data/parsed/`, `data/tables/`, and `data/normalized/`, or otherwise
+forcing those stages to regenerate, before checking the new reconciliation
+and compliance draft.
 
 ## Assumptions
 
-- SunBridge is ordering the 5 kW model (`SUN-5K-G06P3`), per the brief
-  -- the reconciliation step is scoped to that model only, even though
-  both datasheets list all 8 variants.
-- A value is only attributed to `SUN-5K-G06P3` if it's explicitly
-  under that column; a value that's true for another model in the same
-  table is never assumed to also apply to the 5 kW model.
-- "Agrees" means the same value under reasonable unit/wording
-  normalization (e.g. `98.1%` vs `98.1 %`), not exact string equality.
-- Where the two sources use different labels for what looks like the
-  same underlying spec, that's surfaced as a possible match for a human
-  to confirm, not silently merged.
-
-## Known issues fixed while reviewing this repo
-
-While wiring the pipeline together end-to-end for this submission, a
-few pre-existing bugs surfaced and were fixed:
-
-- **`normalize_parser.py` was silently dropping shared-value rows.**
-  `table_parser.py` supports an `"ALL_MODELS"` key (e.g. `IP65` stated
-  once for the whole product family) and comma-joined multi-model keys.
-  `normalize_row()` only ever matched exact single model names against
-  those keys, so any row using either convention ended up `null` for
-  every model even though the source document had a real, common
-  value. Fixed to expand both cases to their individual model keys.
-- **`validator.py` was validating the wrong schema.** It read
-  `data/normalized/*.json` (which `normalize_parser.py` shapes as
-  `{"parameters": ..., "by_model": ...}`) but checked for a `"rows"`
-  key that only exists in `data/tables/*.json` (`table_parser.py`'s
-  output, one stage earlier). It always reported `"No rows found."`
-  and never actually validated anything. Rewritten to check the real
-  `parameters`/`by_model` shape.
-- **The pipeline wasn't wired together.** `main.py` only invoked the
-  LangGraph reconciliation step and required `data/normalized/*.json`
-  to already exist, with no code path that produced those files. Every
-  earlier stage (download, extract, layout-parse, table-parse,
-  normalize, validate) had to be run by hand, in the right order, once
-  per source -- and two of those stages (`downloader.py`,
-  `pdf_extractor.py`) had no CLI entry point at all. `main.py` now
-  calls every stage in sequence.
-- Removed two empty/orphaned files (`report_generator.py`,
-  `src/ai_assessment/pdf_inspector.py`) that were never imported
-  anywhere, and removed the leftover `uv init` console-script stub in
-  `pyproject.toml` that printed `"Hello from ai-assessment!"` instead
-  of running anything real.
+- "The 5 kW model" = `SUN-5K-G06P3`, per the client brief; both sources
+  are 8-model family datasheets and only this column is reconciled.
+- The two datasheets share the same 8-model table structure (same column
+  count, same row ordering conventions); this is checked
+  (`EXPECTED_MODEL_COLUMNS = 8`) and warned about, not silently assumed,
+  if a future document doesn't match.
+- IP-rating / phrasing / spacing differences (e.g. "IP65" vs "IP 65") are
+  presentation differences, not conflicts; genuinely different units or
+  terminology (e.g. kW vs kVA) are always kept as real conflicts.
+- A standard being listed in a datasheet is not treated as proof of
+  certification — only explicit certification evidence would count, and
+  neither source provides any.
+- Manufacturer identity is taken only from the automated footer-text
+  search, not inferred from domain knowledge of who Deye is.
 
 ## What I'd do with more time
 
-- Add the Gemini-based table-extraction verification pass described
-  above, instead of relying solely on geometric heuristics.
-- Test the layout parser against a third-party datasheet with a
-  different column count to actually exercise the fallback path in
-  `get_relevant_page()`.
-- Add automated tests around `normalize_parser.py`'s `ALL_MODELS`/
-  comma-key expansion and `table_parser.py`'s noise-row detection --
-  both were only caught by manual inspection here.
-- Surface `validate_source()`'s warnings inside the generated Markdown
-  report itself (e.g. an "extraction confidence" appendix), not just
-  in the console log, so the agent-facing document is explicit about
-  where the pipeline was unsure.
+- Add a vision/OCR fallback (e.g. render the page and use a multimodal
+  call) for datasheets that turn out to be scanned images rather than
+  text-layer PDFs.
+- Move the Gemini reconciliation/report steps off "ask nicely for JSON in
+  the prompt + strip code fences" and onto structured output / tool
+  calling, so a malformed response doesn't kill the whole run.
+- Add retries/backoff around the Gemini calls, and unit tests for the
+  layout parser's row-merging logic against a few more datasheet
+  variants.
+- Either actually use `pymupdf` (currently an unused dependency) as a
+  cross-check against the pdfplumber extraction, or drop it.
+- Numeric-aware comparison (e.g. tolerate `97.5%` vs `97.50%`) instead of
+  string-level matching for the conflict/agreement classification.
 
-## Repo layout
+## Known limitations
 
-```
-main.py                    # pipeline entry point (uv run python main.py)
-table_parser.py            # data/parsed -> data/tables
-normalize_parser.py        # data/tables -> data/normalized
-validator.py                # sanity-checks data/normalized
-src/ai_assessment/
-  config.py                 # source URLs, target model, data dir layout
-  downloader.py              # PDF download
-  pdf_extractor.py           # pdfplumber word/coordinate extraction
-  layout_parser.py           # visual table reconstruction
-workflow/
-  state.py                   # LangGraph shared state
-  nodes.py                   # load_normalized_data / reconcile / generate_report
-  prompt.py                  # reconciliation + report-generation prompts
-  graph.py                   # LangGraph wiring
-```
+- **Layout parser is tuned to this specific datasheet family.** The
+  coordinate thresholds and the 8-column expectation reflect Deye's
+  current layout; a differently formatted datasheet will need those
+  constants revisited, though the pipeline does warn rather than fail
+  silently when the model-column count doesn't match.
+- **Manufacturer extraction is best-effort regex over free text**, not a
+  labeled field — it's explicitly kept at low confidence for this reason,
+  and a differently worded footer could miss it entirely (`found: false`).
+- **LLM output parsing is string-based** (fence-stripping + `json.loads`),
+  not enforced via a schema/tool-call contract, so an unusual Gemini
+  response can raise instead of degrading gracefully.
+- **Validation is non-fatal by design** — `validate_sources()` logs
+  errors/warnings and still lets the run continue, so a badly parsed PDF
+  can still produce a confident-looking draft. Always check the
+  reconciliation JSON and the source PDFs before this goes to the agent.
+- **No automated tests** are included given the 48-hour window.
+- The Gemini model name is set in `workflow/nodes.py`
+  (`get_gemini`); confirm it matches a model available on your API key
+  before running.
+- Known-synonym terminology can produce a false conflict. In this
+  run, Source 1 reports Transformerless while Source 2 reports
+  Non-Isolated under topology. Both terms genuinely appear in the
+  source PDFs, so this is not an extraction error; however, they are
+  commonly used as synonymous descriptions of inverter topology. The
+  reconciliation correctly treats formatting-only differences such as
+  IP65 vs IP 65 and 4000m vs 4000 m as agreements, but it does not
+  yet apply the same normalization to known technical synonym pairs.
+  This should therefore be treated as a likely false conflict and
+  reviewed by a human rather than assumed to represent a technical
+  contradiction.
+- Adjacent fields can be merged during layout reconstruction.
+  Cooling Concept is reported as Free Cooling Smart Cooling in
+  Source 1, while Source 2 reports Natural Cooling. The raw Source 1
+  layout shows Cooling Concept: Free Cooling and a separate
+  Smart Cooling feature nearby, so the combined value may be a
+  row/field-clustering artifact rather than a single source value.
+  This cannot be confirmed reliably from the flattened text output
+  alone because text order does not fully represent the original visual
+  table structure. The corresponding PDF page should be spot-checked
+  before treating this as a genuine conflict.
+## Disclaimer
+
+`compliance_draft.md` is an AI-assisted draft generated for review. It is
+not a final legal, customs, engineering, or regulatory determination —
+per the report prompt, it's explicitly marked as a draft and does not
+make a final clearance decision on SunBridge's behalf.
