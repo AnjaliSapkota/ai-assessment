@@ -3,29 +3,20 @@ import json
 import re
 
 
-# ============================================================
-# PATHS
-# ============================================================
-
+# Paths
 BASE_DIR = Path(__file__).resolve().parent
 
 INPUT_DIR = BASE_DIR / "data" / "parsed"
 OUTPUT_DIR = BASE_DIR / "data" / "tables"
 
 
-# ============================================================
-# GENERAL SETTINGS
-# ============================================================
-
+# General settings
 MODEL_PATTERN = re.compile(
     r"^SUN-(?:4|5|6|7|8|10|12|15)K-G06P3$"
 )
 
 
-# ============================================================
-# LOAD / SAVE
-# ============================================================
-
+# Load/save
 def load_json(path: Path):
 
     if not path.exists():
@@ -58,11 +49,7 @@ def save_json(path: Path, data):
             ensure_ascii=False,
         )
 
-
-# ============================================================
-# TEXT NORMALIZATION
-# ============================================================
-
+# Text normalization
 def normalize_text(value):
 
     if value is None:
@@ -101,10 +88,7 @@ def normalize_parameter(parameter):
     return parameter
 
 
-# ============================================================
-# MODEL NORMALIZATION
-# ============================================================
-
+# model normalization
 def normalize_model_key(key):
 
     if not isinstance(key, str):
@@ -159,10 +143,7 @@ def is_model_key(key):
     )
 
 
-# ============================================================
-# ROW EXTRACTION
-# ============================================================
-
+# Row extraction
 def extract_rows(parsed_data):
 
     if isinstance(parsed_data, list):
@@ -211,10 +192,7 @@ def extract_rows(parsed_data):
     return []
 
 
-# ============================================================
-# ROW NORMALIZATION
-# ============================================================
-
+# Row normalization
 def normalize_row(row):
 
     if not isinstance(row, dict):
@@ -273,9 +251,7 @@ def normalize_row(row):
 
     row_type = str(row_type).strip()
 
-    # --------------------------------------------------------
     # LIST-STYLE VALUES
-    # --------------------------------------------------------
 
     if isinstance(values, list):
 
@@ -306,10 +282,7 @@ def normalize_row(row):
 
         values = converted
 
-    # --------------------------------------------------------
     # MAKE SURE VALUES ARE A DICT
-    # --------------------------------------------------------
-
     if not isinstance(values, dict):
         values = {}
 
@@ -320,23 +293,6 @@ def normalize_row(row):
         normalized_key = normalize_model_key(
             key
         )
-
-        # ----------------------------------------------------
-        # Layout parser format:
-        #
-        # {
-        #   "SUN-5K-G06P3": {
-        #       "value": "5",
-        #       "col_dist_pts": 2.1
-        #   }
-        # }
-        #
-        # Convert to:
-        #
-        # {
-        #   "SUN-5K-G06P3": "5"
-        # }
-        # ----------------------------------------------------
 
         if isinstance(value, dict):
 
@@ -370,10 +326,7 @@ def normalize_row(row):
     }
 
 
-# ============================================================
-# NOISE DETECTION
-# ============================================================
-
+# noise detection
 def is_noise_row(row):
 
     parameter = row["parameter"].strip()
@@ -382,16 +335,6 @@ def is_noise_row(row):
     # Completely empty row
     if not parameter and not values:
         return True
-
-    # --------------------------------------------------------
-    # Model suffix continuation
-    #
-    # Example:
-    #
-    # -EU-AM2
-    #
-    # This is not a specification.
-    # --------------------------------------------------------
 
     if (
         not parameter
@@ -431,10 +374,7 @@ def remove_noise_rows(rows):
     ]
 
 
-# ============================================================
-# MERGE PARAMETERLESS ROWS
-# ============================================================
-
+# merge parameterless rows
 def merge_parameterless_value_rows(rows):
 
     result = []
@@ -477,9 +417,7 @@ def merge_parameterless_value_rows(rows):
     return result
 
 
-# ============================================================
 # MERGE MPP TRACKER LABEL
-# ============================================================
 
 def merge_mpp_tracker_parameter(rows):
 
@@ -539,9 +477,7 @@ def merge_mpp_tracker_parameter(rows):
     return result
 
 
-# ============================================================
 # GROUP-SPAN DETECTION
-# ============================================================
 
 def detect_group_span(row):
 
@@ -583,9 +519,7 @@ def detect_group_span(row):
     return row
 
 
-# ============================================================
 # DUPLICATE REMOVAL
-# ============================================================
 
 def remove_duplicate_rows(rows):
 
@@ -612,9 +546,7 @@ def remove_duplicate_rows(rows):
     return result
 
 
-# ============================================================
 # SORT
-# ============================================================
 
 def get_y(row):
 
@@ -635,15 +567,11 @@ def sort_rows(rows):
     )
 
 
-# ============================================================
 # EXTRACT MODELS
-# ============================================================
 
 def extract_models(parsed_data):
 
-    # --------------------------------------------------------
     # Explicit models
-    # --------------------------------------------------------
 
     if isinstance(parsed_data, dict):
 
@@ -677,9 +605,7 @@ def extract_models(parsed_data):
             if models:
                 return models
 
-        # ----------------------------------------------------
         # Layout parser output
-        # ----------------------------------------------------
 
         columns = parsed_data.get(
             "model_columns"
@@ -696,9 +622,7 @@ def extract_models(parsed_data):
                 if isinstance(model, str)
             ]
 
-    # --------------------------------------------------------
     # Fallback: inspect values
-    # --------------------------------------------------------
 
     models = []
 
@@ -733,9 +657,7 @@ def extract_models(parsed_data):
     return models
 
 
-# ============================================================
 # BUILD TABLE
-# ============================================================
 
 def build_table(parsed_data, source_id):
 
@@ -803,17 +725,13 @@ def build_table(parsed_data, source_id):
     }
 
 
-# ============================================================
 # VALIDATION
-# ============================================================
 
 def validate_table(table):
 
     errors = []
 
-    # --------------------------------------------------------
     # Models
-    # --------------------------------------------------------
 
     if not table["models"]:
 
@@ -821,9 +739,7 @@ def validate_table(table):
             "No models detected."
         )
 
-    # --------------------------------------------------------
     # Rows
-    # --------------------------------------------------------
 
     for index, row in enumerate(
         table["rows"],
@@ -861,9 +777,7 @@ def validate_table(table):
         )
 
 
-# ============================================================
 # PRINT SUMMARY
-# ============================================================
 
 def print_summary(table):
 
@@ -933,9 +847,7 @@ def print_summary(table):
         )
 
 
-# ============================================================
 # MAIN
-# ============================================================
 
 def parse_source(source_id):
 
@@ -1000,5 +912,5 @@ def main():
     parse_source("source_2")
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
