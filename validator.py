@@ -2,9 +2,7 @@ from pathlib import Path
 import json
 
 
-# ============================================================
-# 1. LOAD NORMALIZED JSON
-# ============================================================
+# Load normalized JSON
 
 def load_normalized_json(json_path: Path) -> dict:
 
@@ -18,9 +16,7 @@ def load_normalized_json(json_path: Path) -> dict:
         return json.load(f)
 
 
-# ============================================================
-# 2. VALIDATE MODELS
-# ============================================================
+# Validate models
 
 def validate_models(data):
 
@@ -42,149 +38,96 @@ def validate_models(data):
     return errors, warnings
 
 
-# ============================================================
-# 3. VALIDATE ROWS
-# ============================================================
-
-def validate_rows(data):
+# Validate parameters
+def validate_parameters(data):
 
     models = data.get("models", [])
-    rows = data.get("rows", [])
+    parameters = data.get("parameters", {})
 
     errors = []
     warnings = []
 
-    if not rows:
-        errors.append("No rows found.")
+    if not parameters:
+        errors.append("No parameters found.")
 
-    seen_y = set()
+    if not isinstance(parameters, dict):
+        errors.append("'parameters' is not a dictionary.")
+        return errors, warnings
 
-    for i, row in enumerate(rows):
+    for parameter, values in parameters.items():
 
-        y = row.get("y")
-        parameter = row.get("parameter", "")
-        values = row.get("values", {})
-
-        # ----------------------------------------------------
-        # Check Y
-        # ----------------------------------------------------
-
-        if y is None:
-            errors.append(
-                f"Row {i}: missing Y coordinate."
-            )
-
-        elif y in seen_y:
-            warnings.append(
-                f"Row {i}: duplicate Y coordinate: {y}"
-            )
-
-        else:
-            seen_y.add(y)
-
-        # ----------------------------------------------------
-        # Check parameter
-        # ----------------------------------------------------
-
-        if not parameter or not parameter.strip():
-
-            warnings.append(
-                f"Row {i}: missing parameter name "
-                f"(Y = {y})."
-            )
-
-        # ----------------------------------------------------
-        # Check values
-        # ----------------------------------------------------
+        if not parameter or not str(parameter).strip():
+            warnings.append("Found a blank parameter name.")
 
         if not isinstance(values, dict):
-
             errors.append(
-                f"Row {i}: values is not a dictionary."
+                f"Parameter '{parameter}': values is not "
+                f"a dictionary."
             )
-
             continue
 
-        # ----------------------------------------------------
-        # Check every model
-        # ----------------------------------------------------
+        # Every declared model should have an entry (even if
+        # the value itself is None / not established).
 
         for model in models:
 
             if model not in values:
 
                 errors.append(
-                    f"Row {i}: missing value for "
-                    f"{model} (Y = {y})."
+                    f"Parameter '{parameter}': missing entry "
+                    f"for model '{model}'."
                 )
 
             elif values[model] is None:
 
                 warnings.append(
-                    f"Row {i}: None value for "
-                    f"{model} (Y = {y})."
+                    f"Parameter '{parameter}': no value for "
+                    f"model '{model}' (null after normalization)."
                 )
 
-        # ----------------------------------------------------
-        # Check for unknown models
-        # ----------------------------------------------------
+        # Flag keys that aren't declared models at all.
 
         for model in values:
 
             if model not in models:
 
                 warnings.append(
-                    f"Row {i}: unknown model "
-                    f"'{model}'."
+                    f"Parameter '{parameter}': unknown model "
+                    f"key '{model}'."
                 )
 
     return errors, warnings
 
 
-# ============================================================
-# 4. CHECK SUSPICIOUS ROWS
-# ============================================================
+# Check suspicious values
 
-def check_suspicious_rows(data):
+def check_suspicious_values(data):
 
     warnings = []
 
-    for row in data.get("rows", []):
+    parameters = data.get("parameters", {})
 
-        y = row.get("y")
-        parameter = row.get("parameter", "")
-        values = row.get("values", {})
+    if not isinstance(parameters, dict):
+        return warnings
 
-        # ----------------------------------------------------
-        # Missing parameter
-        # ----------------------------------------------------
+    for parameter, values in parameters.items():
 
-        if not parameter.strip():
+        if not isinstance(values, dict):
+            continue
 
-            warnings.append(
-                f"Suspicious row: Y = {y} has no parameter name."
-            )
+        for model, value in values.items():
+            if str(value).strip() == "4105":
 
-        # ----------------------------------------------------
-        # Suspicious 4105 artifact
-        # ----------------------------------------------------
-
-        if any(
-            str(value).strip() == "4105"
-            for value in values.values()
-        ):
-
-            warnings.append(
-                f"Possible extraction artifact: "
-                f"Y = {y}, value = 4105."
-            )
+                warnings.append(
+                    f"Possible extraction artifact: "
+                    f"parameter='{parameter}', model='{model}', "
+                    f"value='4105'."
+                )
 
     return warnings
 
 
-# ============================================================
-# 5. PRINT VALIDATION REPORT
-# ============================================================
+# Print validation report
 
 def print_report(data, errors, warnings):
 
@@ -252,50 +195,42 @@ def print_report(data, errors, warnings):
     print("=" * 100)
 
 
-# ============================================================
-# 6. MAIN
-# ============================================================
+#  VALIDATE ONE NORMALIZED SOURCE
+
+def validate_source(source_id: str, verbose: bool = True):
+    """
+    Validate data/normalized/{source_id}.json.
+
+    Returns (errors, warnings). Does not raise on errors -- the
+    caller decides whether to treat them as fatal. This mirrors how
+    main.py wants to keep going and surface problems in the report
+    rather than crash the whole pipeline over one dirty field.
+    """
+
+    input_path = Path(f"data/normalized/{source_id}.json")
+
+    data = load_normalized_json(input_path) if verbose else json.loads(
+        input_path.read_text(encoding="utf-8")
+    )
+
+    model_errors, model_warnings = validate_models(data)
+    param_errors, param_warnings = validate_parameters(data)
+    suspicious_warnings = check_suspicious_values(data)
+
+    errors = model_errors + param_errors
+    warnings = model_warnings + param_warnings + suspicious_warnings
+
+    if verbose:
+        print_report(data, errors, warnings)
+
+    return errors, warnings
+
+
+# CLI ENTRY POINT
 
 if __name__ == "__main__":
 
-    input_path = Path(
-        "data/normalized/source_2.json"
-    )
+    import sys
 
-    data = load_normalized_json(
-        input_path
-    )
-
-    # Validate models
-    model_errors, model_warnings = validate_models(
-        data
-    )
-
-    # Validate rows
-    row_errors, row_warnings = validate_rows(
-        data
-    )
-
-    # Check suspicious rows
-    suspicious_warnings = check_suspicious_rows(
-        data
-    )
-
-    # Combine results
-    errors = (
-        model_errors
-        + row_errors
-    )
-
-    warnings = (
-        model_warnings
-        + row_warnings
-        + suspicious_warnings
-    )
-
-    # Print report
-    print_report(
-        data,
-        errors,
-        warnings
-    )
+    source_id = sys.argv[1] if len(sys.argv) > 1 else "source_1"
+    validate_source(source_id)
