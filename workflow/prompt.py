@@ -6,10 +6,7 @@ updated and tested independently.
 """
 
 
-# ============================================================
-# DOCUMENT RECONCILIATION
-# ============================================================
-
+# Document reconcilation
 RECONCILIATION_PROMPT = """
 You are performing a structured reconciliation of two manufacturer
 datasheets for a solar PV inverter.

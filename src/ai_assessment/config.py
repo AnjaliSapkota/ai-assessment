@@ -19,4 +19,4 @@ RAW_DATA_DIR = DATA_DIR / "raw"
 EXTRACTED_DATA_DIR = DATA_DIR / "extracted"
 PARSED_DATA_DIR = DATA_DIR / "parsed"
 NORMALIZED_DATA_DIR = DATA_DIR / "normalized"
-OUTPUT_DIR = Path("output")
+OUTPUT_DIR = DATA_DIR / "output"

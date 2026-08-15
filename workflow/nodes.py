@@ -15,9 +15,7 @@ from workflow.state import AssessmentState
 load_dotenv()
 
 
-# ============================================================
-# 1. GEMINI MODEL
-# ============================================================
+# Gemini model
 
 def get_gemini():
     """Create the Gemini model used by the workflow."""
@@ -37,10 +35,7 @@ def get_gemini():
     )
 
 
-# ============================================================
-# 2. LOAD NORMALIZED DATA
-# ============================================================
-
+# Load normalized data
 def load_normalized_data(
     state: AssessmentState,
 ) -> AssessmentState:
@@ -85,10 +80,7 @@ def load_normalized_data(
     return state
 
 
-# ============================================================
-# 3. RESPONSE TEXT HELPER
-# ============================================================
-
+# Response text helper
 def extract_response_text(response) -> str:
     """
     Extract plain text from a LangChain Gemini response.
@@ -115,9 +107,7 @@ def extract_response_text(response) -> str:
     return str(content).strip()
 
 
-# ============================================================
-# 4. JSON CLEANING HELPER
-# ============================================================
+# JSON cleaning helper
 
 def clean_json_response(content: str) -> str:
     """
@@ -148,9 +138,7 @@ def clean_json_response(content: str) -> str:
     return content
 
 
-# ============================================================
-# 5. RECONCILE SOURCE DOCUMENTS
-# ============================================================
+# Reconcile source documents
 
 def reconcile_documents(
     state: AssessmentState,
@@ -203,9 +191,7 @@ def reconcile_documents(
     return state
 
 
-# ============================================================
-# 6. GENERATE FINAL REPORT
-# ============================================================
+# generate final report
 
 def generate_report(
     state: AssessmentState,
